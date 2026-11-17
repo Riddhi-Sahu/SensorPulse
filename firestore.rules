@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Deny all reads and writes by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable Hardened Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidCategory(cat) {
+      return cat in ['MOTION', 'ENVIRONMENT', 'POSITION', 'BIOMETRICS', 'LOCATION', 'AUDIO', 'OTHER'];
+    }
+
+    function isValidSensorReading(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.sensorId is string && data.sensorId.size() >= 1 && data.sensorId.size() <= 128 &&
+             data.sensorName is string && data.sensorName.size() >= 1 && data.sensorName.size() <= 120 &&
+             data.sensorCategory is string && isValidCategory(data.sensorCategory) &&
+             data.values is list && data.values.size() >= 1 && data.values.size() <= 16 &&
+             data.values[0] is number &&
+             data.unit is string && data.unit.size() <= 40 &&
+             data.accuracy is int && data.accuracy >= 0 && data.accuracy <= 5 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 300)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCameraCapture(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 128 &&
+             data.localFilePath is string && data.localFilePath.size() >= 1 && data.localFilePath.size() <= 512 &&
+             data.lensFacing in ['back', 'front'] &&
+             data.widthPx is int && data.widthPx >= 1 && data.widthPx <= 20000 &&
+             data.heightPx is int && data.heightPx >= 1 && data.heightPx <= 20000 &&
+             data.fileSizeBytes is int && data.fileSizeBytes >= 1 && data.fileSizeBytes <= 100000000 &&
+             data.flashUsed is bool &&
+             (!('focalLengthMm' in data) || (data.focalLengthMm is number && data.focalLengthMm >= 0 && data.focalLengthMm <= 500)) &&
+             (!('caption' in data) || (data.caption is string && data.caption.size() <= 240)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId} {
+      // Standard Sensor Telemetry Readings
+      match /sensor_readings/{readingId} {
+        allow get: if isOwner(userId) && isValidId(readingId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(readingId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'sensorId', 'sensorName', 'sensorCategory',
+                           'values', 'unit', 'accuracy', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'sensorId', 'sensorName', 'sensorCategory',
+                           'values', 'unit', 'accuracy', 'notes', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidSensorReading(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(readingId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidSensorReading(incoming(), userId) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(readingId);
+      }
+
+      // Dedicated Camera Sensor Capture Metadata (binary JPEG stored locally on device)
+      match /camera_captures/{captureId} {
+        allow get: if isOwner(userId) && isValidId(captureId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(captureId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'fileName', 'localFilePath', 'lensFacing',
+                           'widthPx', 'heightPx', 'fileSizeBytes', 'flashUsed',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'fileName', 'localFilePath', 'lensFacing',
+                           'widthPx', 'heightPx', 'fileSizeBytes', 'flashUsed',
+                           'focalLengthMm', 'caption', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidCameraCapture(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(captureId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidCameraCapture(incoming(), userId) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['caption', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(captureId);
+      }
+    }
+  }
+}

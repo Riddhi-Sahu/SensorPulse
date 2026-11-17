@@ -1,0 +1,17 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-android-sensorpu-7cb6329c-4d17-4d00-ba46-c56a7b0bb340",
+      "rules": "firestore.rules"
+    }
+  ],
+  "emulators": {
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8085
+    },
+    "ui": {
+      "enabled": false
+    }
+  }
+}

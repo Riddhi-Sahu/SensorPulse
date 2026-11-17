@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">SensorPulse</string>
+    <string name="auth_headline">SENSORPULSE HUD</string>
+    <string name="auth_subtitle">Real-time hardware telemetry, permission-gated sensor monitors, and dedicated camera optics vault.</string>
+    <string name="auth_google_cta">Sign in with Google</string>
+    <string name="auth_checking_session">Checking authorized Google session…</string>
+    <string name="tab_sensors">Sensors</string>
+    <string name="tab_logs">Telemetry Log</string>
+    <string name="tab_vault">Camera Vault</string>
+    <string name="permission_required_title">Sensor Permission Required</string>
+    <string name="permission_grant_cta">Grant Permission &amp; Stream</string>
+    <string name="permission_settings_cta">Open App Settings</string>
+    <string name="save_snapshot_cta">Save Snapshot</string>
+    <string name="capture_store_cta">Capture &amp; Store</string>
+    <string name="sign_out">Sign Out</string>
+    <string name="no_logs_title">No Telemetry Snapshots Yet</string>
+    <string name="no_logs_subtitle">Open any sensor, grant permission, and tap Save Snapshot to sync readings to Cloud Firestore in real time.</string>
+    <string name="no_captures_title">Camera Vault Empty</string>
+    <string name="no_captures_subtitle">Open the Camera Sensor, capture a frame, and store the local JPEG paired with optical metadata in Firestore.</string>
+</resources>

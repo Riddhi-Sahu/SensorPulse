@@ -1,0 +1,153 @@
+{
+  "entities": {
+    "SensorReading": {
+      "title": "SensorReading",
+      "description": "A saved snapshot of live numeric or vector telemetry from a device hardware sensor, GPS, or microphone.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID matching the parent user document."
+        },
+        "sensorId": {
+          "type": "string",
+          "description": "Deterministic identifier of the sensor or module."
+        },
+        "sensorName": {
+          "type": "string",
+          "description": "Human-readable name of the sensor."
+        },
+        "sensorCategory": {
+          "type": "string",
+          "enum": [
+            "MOTION",
+            "ENVIRONMENT",
+            "POSITION",
+            "BIOMETRICS",
+            "LOCATION",
+            "AUDIO",
+            "OTHER"
+          ],
+          "description": "Telemetry category of the sensor."
+        },
+        "values": {
+          "type": "array",
+          "description": "Bounded numeric axis or metric readings (1 to 16 numbers)."
+        },
+        "unit": {
+          "type": "string",
+          "description": "Measurement unit label (e.g., m/s^2, uT, dBFS, deg)."
+        },
+        "accuracy": {
+          "type": "integer",
+          "description": "Reported sensor accuracy grade (0..5)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional user annotation for the telemetry snapshot."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned creation timestamp via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned update timestamp via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "sensorId",
+        "sensorName",
+        "sensorCategory",
+        "values",
+        "unit",
+        "accuracy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CameraCaptureRecord": {
+      "title": "CameraCaptureRecord",
+      "description": "Optical and local file metadata for a camera sensor photo capture stored in app-private storage.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID matching the parent user document."
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Local JPEG file name inside app-private camera_captures directory."
+        },
+        "localFilePath": {
+          "type": "string",
+          "description": "Absolute path to the captured image file in app-private storage."
+        },
+        "lensFacing": {
+          "type": "string",
+          "enum": ["back", "front"],
+          "description": "Camera lens direction used for the capture."
+        },
+        "widthPx": {
+          "type": "integer",
+          "description": "Captured image width in pixels."
+        },
+        "heightPx": {
+          "type": "integer",
+          "description": "Captured image height in pixels."
+        },
+        "fileSizeBytes": {
+          "type": "integer",
+          "description": "Local JPEG file size in bytes."
+        },
+        "flashUsed": {
+          "type": "boolean",
+          "description": "Whether flash illumination was enabled for the capture."
+        },
+        "focalLengthMm": {
+          "type": "number",
+          "description": "Optional physical focal length reported by camera characteristics."
+        },
+        "caption": {
+          "type": "string",
+          "description": "Optional user caption for the capture."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned creation timestamp via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned update timestamp via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "fileName",
+        "localFilePath",
+        "lensFacing",
+        "widthPx",
+        "heightPx",
+        "fileSizeBytes",
+        "flashUsed",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/sensor_readings/{readingId}": {
+      "schema": { "$ref": "#/entities/SensorReading" },
+      "description": "User-scoped live-synced snapshots of standard hardware, location, and audio sensor readings."
+    },
+    "/users/{userId}/camera_captures/{captureId}": {
+      "schema": { "$ref": "#/entities/CameraCaptureRecord" },
+      "description": "User-scoped metadata records for CameraX captures whose binary JPEG files live in app-private local storage."
+    }
+  }
+}

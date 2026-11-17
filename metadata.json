@@ -1,0 +1,6 @@
+{
+  "name": "SensorPulse",
+  "description": "Real-time Android sensor telemetry HUD with Google Sign-In, Cloud Firestore sync, and dedicated local-plus-metadata camera capture vault.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
