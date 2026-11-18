@@ -27,8 +27,7 @@ jobs:
             printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
           fi
           if [ ! -f app/google-services.json ]; then
-            echo "::error::Missing app/google-services.json. AI Studio omits Firebase config files when pushing to GitHub. Add app/google-services.json to the repo or set the GOOGLE_SERVICES_JSON repository secret."
-            exit 1
+            echo "::warning::app/google-services.json is not present (AI Studio omits Firebase config files when pushing to GitHub, and GOOGLE_SERVICES_JSON secret is not set). Building APK without Firebase config using MissingGoogleServicesStrategy.WARN."
           fi
 
       - name: Install Android SDK 36.1 and Accept Licenses

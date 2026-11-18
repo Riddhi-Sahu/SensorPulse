@@ -1,7 +1,6 @@
 package com.example.data.repository
 
 import android.content.Context
-import com.example.R
 import com.example.data.firebase.OperationType
 import com.example.data.firebase.handleFirestoreError
 import com.example.data.model.CameraCaptureRecord
@@ -28,11 +27,23 @@ class TelemetryRepository(
     private val db: FirebaseFirestore,
     private val auth: FirebaseAuth = Firebase.auth
 ) {
-    constructor(context: Context) : this(
-        FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        )
-    )
+    constructor(context: Context) : this(resolveFirestore(context))
+
+    companion object {
+        private fun resolveFirestore(context: Context): FirebaseFirestore {
+            val appCtx = context.applicationContext
+            val resId = appCtx.resources.getIdentifier(
+                "firestore_database_id",
+                "string",
+                appCtx.packageName
+            )
+            return if (resId != 0) {
+                FirebaseFirestore.getInstance(appCtx.getString(resId))
+            } else {
+                FirebaseFirestore.getInstance()
+            }
+        }
+    }
 
     private fun requireAuthenticatedUserId(expectedUserId: String? = null): String {
         val uid = auth.currentUser?.uid

@@ -84,6 +84,7 @@ import com.example.ui.theme.TelemetryAmber
 import com.example.ui.viewmodel.SensorHubViewModel
 import com.example.ui.viewmodel.TelemetryVaultViewModel
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
@@ -108,7 +109,19 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
+fun AppNavigation() {
+    val context = LocalContext.current
+    val isFirebaseConfigured = remember(context) {
+        FirebaseApp.getApps(context).isNotEmpty()
+    }
+    if (!isFirebaseConfigured) {
+        AuthScreen(
+            isFirebaseConfigured = false,
+            onAuthSuccess = {}
+        )
+        return
+    }
+    val auth: FirebaseAuth = remember { Firebase.auth }
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
     val user = currentUser
 
@@ -135,8 +148,16 @@ private fun AuthenticatedTelemetryHost(currentUser: FirebaseUser) {
         factory = viewModelFactory {
             initializer {
                 val app = checkNotNull(this[APPLICATION_KEY])
-                val dbId = app.getString(R.string.firestore_database_id)
-                val db = FirebaseFirestore.getInstance(dbId)
+                val dbResId = app.resources.getIdentifier(
+                    "firestore_database_id",
+                    "string",
+                    app.packageName
+                )
+                val db = if (dbResId != 0) {
+                    FirebaseFirestore.getInstance(app.getString(dbResId))
+                } else {
+                    FirebaseFirestore.getInstance()
+                }
                 SensorHubViewModel(
                     repository = TelemetryRepository(db),
                     sensorManager = DeviceSensorManager(app),
@@ -152,8 +173,16 @@ private fun AuthenticatedTelemetryHost(currentUser: FirebaseUser) {
         factory = viewModelFactory {
             initializer {
                 val app = checkNotNull(this[APPLICATION_KEY])
-                val dbId = app.getString(R.string.firestore_database_id)
-                val db = FirebaseFirestore.getInstance(dbId)
+                val dbResId = app.resources.getIdentifier(
+                    "firestore_database_id",
+                    "string",
+                    app.packageName
+                )
+                val db = if (dbResId != 0) {
+                    FirebaseFirestore.getInstance(app.getString(dbResId))
+                } else {
+                    FirebaseFirestore.getInstance()
+                }
                 TelemetryVaultViewModel(
                     repository = TelemetryRepository(db),
                     currentUserId = uid

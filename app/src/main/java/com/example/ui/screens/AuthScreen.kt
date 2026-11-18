@@ -66,17 +66,24 @@ import com.example.ui.theme.TelemetryAmber
 
 @Composable
 fun AuthScreen(
+    isFirebaseConfigured: Boolean = true,
     onAuthSuccess: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
 
-    var isCheckingSession by remember { mutableStateOf(true) }
+    var isCheckingSession by remember { mutableStateOf(isFirebaseConfigured) }
     var isSigningIn by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var errorMessage by remember {
+        mutableStateOf<String?>(
+            if (isFirebaseConfigured) null
+            else "Firebase is not configured in this build. Add google-services.json or configure the GOOGLE_SERVICES_JSON GitHub secret."
+        )
+    }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(isFirebaseConfigured) {
+        if (!isFirebaseConfigured) return@LaunchedEffect
         kotlinx.coroutines.delay(150L)
         attemptAutoSignIn(
             context = context,
@@ -271,7 +278,7 @@ fun AuthScreen(
                                 }
                             )
                         },
-                        enabled = !isSigningIn && !isCheckingSession,
+                        enabled = isFirebaseConfigured && !isSigningIn && !isCheckingSession,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(54.dp)
