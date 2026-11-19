@@ -7,8 +7,13 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 @Database(
-    entities = [SensorReadingEntity::class, CameraCaptureEntity::class],
-    version = 1,
+    entities = [
+        LocalUserEntity::class,
+        RecordingSessionEntity::class,
+        SensorReadingEntity::class,
+        CameraCaptureEntity::class
+    ],
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(TelemetryConverters::class)
@@ -26,7 +31,10 @@ abstract class SensorPulseDatabase : RoomDatabase() {
                     context.applicationContext,
                     SensorPulseDatabase::class.java,
                     "sensorpulse_local.db"
-                ).build().also { INSTANCE = it }
+                )
+                    .fallbackToDestructiveMigration(true)
+                    .build()
+                    .also { INSTANCE = it }
             }
         }
     }

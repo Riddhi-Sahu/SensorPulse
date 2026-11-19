@@ -26,6 +26,7 @@ enum class SensorKind {
 data class SensorDescriptor(
     val id: String,
     val name: String,
+    val hardwareName: String = name,
     val category: SensorCategory,
     val kind: SensorKind,
     val androidSensorType: Int? = null,
@@ -46,17 +47,30 @@ data class LiveTelemetrySample(
     val unit: String,
     val accuracy: Int,
     val timestampMs: Long,
-    val statusNote: String? = null
+    val statusNote: String? = null,
+    val isInMotion: Boolean = false,
+    val stepCount: Int? = null
+)
+
+data class RecordingSession(
+    val id: Long = 0L,
+    val title: String = "",
+    val startedAtMs: Long = 0L,
+    val endedAtMs: Long? = null,
+    val isActive: Boolean = false,
+    val totalSteps: Int = 0
 )
 
 data class SensorReading(
     val id: Long = 0L,
+    val sessionId: Long? = null,
     val sensorId: String = "",
     val sensorName: String = "",
     val sensorCategory: String = "OTHER",
     val values: List<Double> = emptyList(),
     val unit: String = "",
     val accuracy: Int = 0,
+    val stepCount: Int = 0,
     val notes: String? = null,
     val createdAtMs: Long = 0L,
     val updatedAtMs: Long = 0L
@@ -64,6 +78,7 @@ data class SensorReading(
 
 data class CameraCaptureRecord(
     val id: Long = 0L,
+    val sessionId: Long? = null,
     val fileName: String = "",
     val localFilePath: String = "",
     val lensFacing: String = "back",
@@ -75,4 +90,10 @@ data class CameraCaptureRecord(
     val caption: String? = null,
     val createdAtMs: Long = 0L,
     val updatedAtMs: Long = 0L
+)
+
+data class LocalUser(
+    val id: Long = 0L,
+    val username: String,
+    val createdAtMs: Long = 0L
 )

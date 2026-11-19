@@ -2,10 +2,12 @@ package com.example.data.repository
 
 import android.content.Context
 import com.example.data.local.CameraCaptureEntity
+import com.example.data.local.RecordingSessionEntity
 import com.example.data.local.SensorPulseDatabase
 import com.example.data.local.SensorReadingEntity
 import com.example.data.local.TelemetryDao
 import com.example.data.model.CameraCaptureRecord
+import com.example.data.model.RecordingSession
 import com.example.data.model.SensorReading
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -21,19 +23,75 @@ class TelemetryRepository(
         SensorPulseDatabase.getInstance(context).telemetryDao()
     )
 
+    fun observeSessions(): Flow<List<RecordingSession>> =
+        dao.observeSessions().map { list -> list.map { it.toModel() } }
+
     fun observeSensorReadings(): Flow<List<SensorReading>> =
         dao.observeSensorReadings().map { list -> list.map { it.toModel() } }
 
     fun observeCameraCaptures(): Flow<List<CameraCaptureRecord>> =
         dao.observeCameraCaptures().map { list -> list.map { it.toModel() } }
 
+    suspend fun startSession(title: String): Result<Long> {
+        return try {
+            val now = System.currentTimeMillis()
+            val id = dao.insertSession(
+                RecordingSessionEntity(
+                    title = title.ifBlank { "Telemetry Session" },
+                    startedAtMs = now,
+                    endedAtMs = null,
+                    isActive = true,
+                    totalSteps = 0
+                )
+            )
+            Result.success(id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun stopSession(sessionId: Long, totalSteps: Int): Result<Unit> {
+        return try {
+            require(sessionId > 0L) { "Invalid session ID" }
+            dao.finishSession(sessionId, System.currentTimeMillis(), totalSteps.coerceAtLeast(0))
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateSessionSteps(sessionId: Long, totalSteps: Int) {
+        if (sessionId <= 0L) return
+        runCatching { dao.updateSessionSteps(sessionId, totalSteps.coerceAtLeast(0)) }
+    }
+
+    suspend fun deleteSession(sessionId: Long): Result<Unit> {
+        return try {
+            require(sessionId > 0L) { "Invalid session ID" }
+            dao.deleteReadingsForSession(sessionId)
+            dao.clearSessionIdForCaptures(sessionId)
+            dao.deleteSession(sessionId)
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun saveSensorReading(
+        sessionId: Long? = null,
         sensorId: String,
         sensorName: String,
         sensorCategory: String,
         values: List<Double>,
         unit: String,
         accuracy: Int,
+        stepCount: Int = 0,
         notes: String? = null
     ): Result<Unit> {
         return try {
@@ -43,12 +101,14 @@ class TelemetryRepository(
 
             val now = System.currentTimeMillis()
             val entity = SensorReadingEntity(
+                sessionId = sessionId,
                 sensorId = sensorId.take(128),
                 sensorName = sensorName.take(120),
                 sensorCategory = sensorCategory,
                 values = safeValues,
                 unit = unit.take(40),
                 accuracy = accuracy.coerceIn(0, 5),
+                stepCount = stepCount.coerceAtLeast(0),
                 notes = notes?.trim()?.take(300)?.takeIf { it.isNotEmpty() },
                 createdAtMs = now,
                 updatedAtMs = now
@@ -63,6 +123,7 @@ class TelemetryRepository(
     }
 
     suspend fun saveCameraCapture(
+        sessionId: Long? = null,
         fileName: String,
         localFilePath: String,
         lensFacing: String,
@@ -81,6 +142,7 @@ class TelemetryRepository(
 
             val now = System.currentTimeMillis()
             val entity = CameraCaptureEntity(
+                sessionId = sessionId,
                 fileName = fileName.take(128),
                 localFilePath = localFilePath.take(512),
                 lensFacing = if (lensFacing == "front") "front" else "back",

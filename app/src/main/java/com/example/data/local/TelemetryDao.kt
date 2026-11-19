@@ -9,6 +9,33 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TelemetryDao {
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertUser(entity: LocalUserEntity): Long
+
+    @Query("SELECT * FROM local_users WHERE usernameNormalized = :usernameNormalized LIMIT 1")
+    suspend fun findUserByUsernameNormalized(usernameNormalized: String): LocalUserEntity?
+
+    @Query("SELECT * FROM recording_sessions ORDER BY startedAtMs DESC")
+    fun observeSessions(): Flow<List<RecordingSessionEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSession(entity: RecordingSessionEntity): Long
+
+    @Query("UPDATE recording_sessions SET endedAtMs = :endedAtMs, isActive = 0, totalSteps = :totalSteps WHERE id = :sessionId")
+    suspend fun finishSession(sessionId: Long, endedAtMs: Long, totalSteps: Int)
+
+    @Query("UPDATE recording_sessions SET totalSteps = :totalSteps WHERE id = :sessionId")
+    suspend fun updateSessionSteps(sessionId: Long, totalSteps: Int)
+
+    @Query("DELETE FROM recording_sessions WHERE id = :sessionId")
+    suspend fun deleteSession(sessionId: Long)
+
+    @Query("DELETE FROM sensor_readings WHERE sessionId = :sessionId")
+    suspend fun deleteReadingsForSession(sessionId: Long)
+
+    @Query("UPDATE camera_captures SET sessionId = NULL WHERE sessionId = :sessionId")
+    suspend fun clearSessionIdForCaptures(sessionId: Long)
+
     @Query("SELECT * FROM sensor_readings ORDER BY createdAtMs DESC")
     fun observeSensorReadings(): Flow<List<SensorReadingEntity>>
 

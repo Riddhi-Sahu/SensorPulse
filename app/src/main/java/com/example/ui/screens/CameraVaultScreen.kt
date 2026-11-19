@@ -283,6 +283,9 @@ private fun CameraVaultCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                record.sessionId?.let { sid ->
+                    VaultSpecPill("SESSION #$sid")
+                }
                 VaultSpecPill("${record.widthPx}×${record.heightPx}")
                 VaultSpecPill(sizeKb)
                 record.focalLengthMm?.let {

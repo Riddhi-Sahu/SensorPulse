@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.CameraCaptureRecord
+import com.example.data.model.RecordingSession
 import com.example.data.model.SensorReading
 import com.example.data.repository.TelemetryRepository
 import kotlinx.coroutines.CancellationException
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -24,6 +26,17 @@ sealed interface UiState<out T> {
     data class Success<T>(val data: T) : UiState<T>
     data class Error(val message: String) : UiState<Nothing>
 }
+
+data class SessionWithReadings(
+    val session: RecordingSession,
+    val readings: List<SensorReading>,
+    val captures: List<CameraCaptureRecord> = emptyList()
+)
+
+data class TelemetryLogBundle(
+    val sessions: List<SessionWithReadings>,
+    val standaloneReadings: List<SensorReading>
+)
 
 class TelemetryVaultViewModel(
     private val repository: TelemetryRepository
@@ -35,12 +48,35 @@ class TelemetryVaultViewModel(
     private val _vaultFeedback = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val vaultFeedback: SharedFlow<String> = _vaultFeedback.asSharedFlow()
 
-    val sensorReadings: StateFlow<UiState<List<SensorReading>>> =
-        repository.observeSensorReadings()
-            .map<List<SensorReading>, UiState<List<SensorReading>>> { UiState.Success(it) }
+    val logBundle: StateFlow<UiState<TelemetryLogBundle>> =
+        combine(
+            repository.observeSessions(),
+            repository.observeSensorReadings(),
+            repository.observeCameraCaptures()
+        ) { sessions, readings, captures ->
+            val bySession = readings.groupBy { it.sessionId }
+            val capturesBySession = captures.groupBy { it.sessionId }
+            val sessionBundles = sessions.map { session ->
+                SessionWithReadings(
+                    session = session,
+                    readings = (bySession[session.id] ?: emptyList()).sortedByDescending { it.createdAtMs },
+                    captures = (capturesBySession[session.id] ?: emptyList()).sortedByDescending { it.createdAtMs }
+                )
+            }
+            val knownSessionIds = sessions.mapTo(mutableSetOf()) { it.id }
+            val standalone = readings
+                .filter { it.sessionId == null || it.sessionId !in knownSessionIds }
+                .sortedByDescending { it.createdAtMs }
+            UiState.Success(
+                TelemetryLogBundle(
+                    sessions = sessionBundles,
+                    standaloneReadings = standalone
+                )
+            ) as UiState<TelemetryLogBundle>
+        }
             .catch { error ->
                 if (error is CancellationException) throw error
-                Log.w(TAG, "Error observing sensor readings", error)
+                Log.w(TAG, "Error observing telemetry sessions", error)
                 emit(UiState.Error(error.message ?: "Failed to load telemetry logs"))
             }
             .stateIn(
@@ -65,6 +101,15 @@ class TelemetryVaultViewModel(
 
     fun setLogFilterCategory(category: String?) {
         _logFilterCategory.value = category
+    }
+
+    fun deleteSession(sessionId: Long) {
+        viewModelScope.launch {
+            repository.deleteSession(sessionId).fold(
+                onSuccess = { _vaultFeedback.tryEmit("Session deleted") },
+                onFailure = { _vaultFeedback.tryEmit(it.localizedMessage ?: "Failed to delete session") }
+            )
+        }
     }
 
     fun updateReadingNotes(readingId: Long, notes: String) {

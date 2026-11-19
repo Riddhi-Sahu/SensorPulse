@@ -4,30 +4,71 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
 import com.example.data.model.CameraCaptureRecord
+import com.example.data.model.LocalUser
+import com.example.data.model.RecordingSession
 import com.example.data.model.SensorReading
 import org.json.JSONArray
+
+@Entity(tableName = "local_users")
+data class LocalUserEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val username: String,
+    val usernameNormalized: String,
+    val passwordHash: String,
+    val saltHex: String,
+    val createdAtMs: Long
+) {
+    fun toModel(): LocalUser = LocalUser(
+        id = id,
+        username = username,
+        createdAtMs = createdAtMs
+    )
+}
+
+@Entity(tableName = "recording_sessions")
+data class RecordingSessionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val title: String,
+    val startedAtMs: Long,
+    val endedAtMs: Long? = null,
+    val isActive: Boolean = true,
+    val totalSteps: Int = 0
+) {
+    fun toModel(): RecordingSession = RecordingSession(
+        id = id,
+        title = title,
+        startedAtMs = startedAtMs,
+        endedAtMs = endedAtMs,
+        isActive = isActive,
+        totalSteps = totalSteps
+    )
+}
 
 @Entity(tableName = "sensor_readings")
 data class SensorReadingEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val sessionId: Long? = null,
     val sensorId: String,
     val sensorName: String,
     val sensorCategory: String,
     val values: List<Double>,
     val unit: String,
     val accuracy: Int,
+    val stepCount: Int = 0,
     val notes: String?,
     val createdAtMs: Long,
     val updatedAtMs: Long
 ) {
     fun toModel(): SensorReading = SensorReading(
         id = id,
+        sessionId = sessionId,
         sensorId = sensorId,
         sensorName = sensorName,
         sensorCategory = sensorCategory,
         values = values,
         unit = unit,
         accuracy = accuracy,
+        stepCount = stepCount,
         notes = notes,
         createdAtMs = createdAtMs,
         updatedAtMs = updatedAtMs
@@ -37,6 +78,7 @@ data class SensorReadingEntity(
 @Entity(tableName = "camera_captures")
 data class CameraCaptureEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val sessionId: Long? = null,
     val fileName: String,
     val localFilePath: String,
     val lensFacing: String,
@@ -51,6 +93,7 @@ data class CameraCaptureEntity(
 ) {
     fun toModel(): CameraCaptureRecord = CameraCaptureRecord(
         id = id,
+        sessionId = sessionId,
         fileName = fileName,
         localFilePath = localFilePath,
         lensFacing = lensFacing,

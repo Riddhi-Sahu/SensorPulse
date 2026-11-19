@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -25,13 +26,17 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,6 +44,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -46,6 +52,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -61,6 +68,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.LiveTelemetrySample
+import com.example.data.model.SensorCategory
 import com.example.data.model.SensorDescriptor
 import com.example.data.model.SensorKind
 import com.example.ui.components.OscilloscopeChart
@@ -79,12 +87,22 @@ import java.util.Locale
 fun SensorDetailScreen(
     sensor: SensorDescriptor,
     isAuthorized: Boolean,
+    isStreaming: Boolean,
+    isSessionActive: Boolean,
+    isRecordingInSession: Boolean,
+    motionStepCount: Int,
+    isUserInMotion: Boolean,
     liveSample: LiveTelemetrySample?,
     waveformHistory: List<List<Double>>,
     streamError: String?,
     isSaving: Boolean,
     snackbarHostState: SnackbarHostState,
     onPermissionGranted: () -> Unit,
+    onStopSensor: () -> Unit,
+    onResumeSensor: () -> Unit,
+    onResetSteps: () -> Unit,
+    onStartSession: () -> Unit,
+    onStopSession: () -> Unit,
     onSaveSnapshot: (String?) -> Unit,
     onBack: () -> Unit
 ) {
@@ -210,6 +228,217 @@ fun SensorDetailScreen(
                             }
                         }
 
+                        // Sensor Stream & Session Control Bar
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isStreaming) SignalEmerald.copy(alpha = 0.6f) else TelemetryAmber.copy(alpha = 0.6f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (isStreaming) "SENSOR ACTIVE" else "SENSOR STOPPED",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = if (isStreaming) SignalEmerald else TelemetryAmber
+                                        )
+                                        Text(
+                                            text = when {
+                                                isSessionActive && isRecordingInSession -> "Recording into active session"
+                                                isSessionActive -> "Session active (sensor paused)"
+                                                else -> "Tap Stop Sensor anytime to pause sampling"
+                                            },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    if (isStreaming) {
+                                        Button(
+                                            onClick = onStopSensor,
+                                            modifier = Modifier
+                                                .height(48.dp)
+                                                .testTag("stop_sensor_button"),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = AlertCrimson,
+                                                contentColor = MaterialTheme.colorScheme.onError
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 14.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Stop,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Stop Sensor", style = MaterialTheme.typography.labelLarge)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = onResumeSensor,
+                                            modifier = Modifier
+                                                .height(48.dp)
+                                                .testTag("resume_sensor_button"),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = SignalEmerald,
+                                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 14.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.PlayArrow,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Start Sensor", style = MaterialTheme.typography.labelLarge)
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (isSessionActive) {
+                                        OutlinedButton(
+                                            onClick = onStopSession,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp)
+                                                .testTag("detail_stop_session_button"),
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, AlertCrimson.copy(alpha = 0.7f))
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Stop,
+                                                contentDescription = null,
+                                                tint = AlertCrimson,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Stop Recording Session",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = AlertCrimson
+                                            )
+                                        }
+                                    } else {
+                                        OutlinedButton(
+                                            onClick = onStartSession,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp)
+                                                .testTag("detail_start_session_button"),
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.7f))
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.FiberManualRecord,
+                                                contentDescription = null,
+                                                tint = ElectricCyan,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Start Multi-Sensor Session",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = ElectricCyan
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Motion Step Counter Card for all Motion Sensors
+                        if (sensor.category == SensorCategory.MOTION) {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("motion_step_counter_card"),
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isUserInMotion) SignalEmerald.copy(alpha = 0.75f) else HudBorder
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .background(
+                                                    (if (isUserInMotion) SignalEmerald else TelemetryAmber)
+                                                        .copy(alpha = 0.16f),
+                                                    RoundedCornerShape(12.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.DirectionsRun,
+                                                contentDescription = "Motion step counter",
+                                                tint = if (isUserInMotion) SignalEmerald else TelemetryAmber,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = if (isUserInMotion) "USER IN MOTION" else "STATIONARY",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (isUserInMotion) SignalEmerald else TelemetryAmber
+                                            )
+                                            Text(
+                                                text = "$motionStepCount Steps",
+                                                style = MaterialTheme.typography.headlineSmall,
+                                                color = ElectricCyan
+                                            )
+                                        }
+                                    }
+
+                                    TextButton(
+                                        onClick = onResetSteps,
+                                        modifier = Modifier.testTag("reset_steps_button")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Refresh,
+                                            contentDescription = "Reset step count",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Reset",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         // Real-time Waveform Oscilloscope
                         OscilloscopeChart(
                             history = waveformHistory,
@@ -239,13 +468,13 @@ fun SensorDetailScreen(
                                         color = ElectricCyan
                                     )
                                     Text(
-                                        text = if (liveSample != null) {
-                                            "ACCURACY: ${liveSample.accuracy}/3"
-                                        } else {
-                                            "CONNECTING…"
+                                        text = when {
+                                            !isStreaming -> "PAUSED"
+                                            liveSample != null -> "ACCURACY: ${liveSample.accuracy}/3"
+                                            else -> "CONNECTING…"
                                         },
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = SignalEmerald
+                                        color = if (isStreaming) SignalEmerald else TelemetryAmber
                                     )
                                 }
 
@@ -312,6 +541,9 @@ fun SensorDetailScreen(
                                     style = MaterialTheme.typography.labelMedium,
                                     color = TelemetryAmber
                                 )
+                                if (sensor.hardwareName.isNotBlank() && sensor.hardwareName != sensor.name) {
+                                    SpecRow("Hardware Driver", sensor.hardwareName)
+                                }
                                 SpecRow("Vendor", sensor.vendor)
                                 SpecRow("Measurement Unit", sensor.unit)
                                 if (sensor.maxRange > 0f) {
@@ -338,7 +570,11 @@ fun SensorDetailScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Text(
-                                    text = "SAVE TO LOCAL TELEMETRY DATABASE",
+                                    text = if (isSessionActive) {
+                                        "RECORD SNAPSHOT INTO ACTIVE SESSION"
+                                    } else {
+                                        "SAVE TO LOCAL TELEMETRY DATABASE"
+                                    },
                                     style = MaterialTheme.typography.labelMedium,
                                     color = SignalEmerald
                                 )

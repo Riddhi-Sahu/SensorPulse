@@ -44,12 +44,20 @@ class DeviceSensorManager(context: Context) {
 
         // 1. Hardware & Composite Sensors from Android SensorManager
         val rawSensors = sensorManager.getSensorList(Sensor.TYPE_ALL)
+        val typeCounts = rawSensors.groupingBy { it.type }.eachCount()
         rawSensors.forEachIndexed { index, sensor ->
             val meta = mapHardwareSensorMeta(sensor)
             val id = "hw_${sensor.type}_${index}"
+            val hasDuplicateType = (typeCounts[sensor.type] ?: 0) > 1
+            val displayName = if (hasDuplicateType && sensor.isWakeUpSensor) {
+                "${meta.fallbackName} (Wake-up)"
+            } else {
+                meta.fallbackName
+            }
             result += SensorDescriptor(
                 id = id,
-                name = sensor.name.ifBlank { meta.fallbackName },
+                name = displayName,
+                hardwareName = sensor.name.ifBlank { displayName },
                 category = meta.category,
                 kind = SensorKind.HARDWARE_SENSOR,
                 androidSensorType = sensor.type,
@@ -140,7 +148,7 @@ class DeviceSensorManager(context: Context) {
     fun streamHardwareSensor(descriptor: SensorDescriptor): Flow<LiveTelemetrySample> = callbackFlow {
         val sensorType = descriptor.androidSensorType
         val targetSensor = sensorManager.getSensorList(Sensor.TYPE_ALL).firstOrNull {
-            it.type == sensorType && it.name == descriptor.name
+            it.type == sensorType && it.name == descriptor.hardwareName
         } ?: sensorType?.let { sensorManager.getDefaultSensor(it) }
 
         if (targetSensor == null) {
@@ -189,17 +197,100 @@ class DeviceSensorManager(context: Context) {
                 sensorManager.cancelTriggerSensor(triggerListener, targetSensor)
             }
         } else {
+            var baselineSteps: Float? = null
+            var detectedSteps = 0
+            var gravityBaseline = 9.81
+            var lastStepTimeMs = 0L
+            var lastMotionTimeMs = 0L
+
             val listener = object : SensorEventListener {
                 override fun onSensorChanged(event: SensorEvent?) {
                     event ?: return
-                    val vals = event.values.map { it.toDouble() }.take(16).ifEmpty { listOf(0.0) }
+                    val now = System.currentTimeMillis()
+                    var vals = event.values.map { it.toDouble() }.take(16).ifEmpty { listOf(0.0) }
+                    var stepOut: Int? = null
+                    var inMotion = false
+
+                    when (targetSensor.type) {
+                        Sensor.TYPE_STEP_COUNTER -> {
+                            val raw = event.values.firstOrNull() ?: 0f
+                            val base = baselineSteps ?: raw.also { baselineSteps = it }
+                            val rel = (raw - base).toInt().coerceAtLeast(0)
+                            if (rel > detectedSteps) {
+                                detectedSteps = rel
+                                lastMotionTimeMs = now
+                            }
+                            vals = listOf(rel.toDouble())
+                            stepOut = rel
+                            inMotion = (now - lastMotionTimeMs) < MOTION_HOLD_MS
+                        }
+
+                        Sensor.TYPE_STEP_DETECTOR -> {
+                            detectedSteps += 1
+                            lastMotionTimeMs = now
+                            vals = listOf(detectedSteps.toDouble())
+                            stepOut = detectedSteps
+                            inMotion = true
+                        }
+
+                        Sensor.TYPE_ACCELEROMETER -> {
+                            val x = vals.getOrElse(0) { 0.0 }
+                            val y = vals.getOrElse(1) { 0.0 }
+                            val z = vals.getOrElse(2) { 0.0 }
+                            val mag = sqrt(x * x + y * y + z * z)
+                            gravityBaseline = 0.85 * gravityBaseline + 0.15 * mag
+                            val dynamicMag = kotlin.math.abs(mag - gravityBaseline)
+                            if (dynamicMag > MOTION_THRESHOLD_MS2) {
+                                lastMotionTimeMs = now
+                            }
+                            if (dynamicMag > STEP_PEAK_THRESHOLD_MS2 && (now - lastStepTimeMs) >= STEP_COOLDOWN_MS) {
+                                detectedSteps += 1
+                                lastStepTimeMs = now
+                                lastMotionTimeMs = now
+                            }
+                            stepOut = detectedSteps
+                            inMotion = (now - lastMotionTimeMs) < MOTION_HOLD_MS
+                        }
+
+                        Sensor.TYPE_LINEAR_ACCELERATION -> {
+                            val x = vals.getOrElse(0) { 0.0 }
+                            val y = vals.getOrElse(1) { 0.0 }
+                            val z = vals.getOrElse(2) { 0.0 }
+                            val dynamicMag = sqrt(x * x + y * y + z * z)
+                            if (dynamicMag > MOTION_THRESHOLD_MS2) {
+                                lastMotionTimeMs = now
+                            }
+                            if (dynamicMag > STEP_PEAK_THRESHOLD_MS2 && (now - lastStepTimeMs) >= STEP_COOLDOWN_MS) {
+                                detectedSteps += 1
+                                lastStepTimeMs = now
+                                lastMotionTimeMs = now
+                            }
+                            stepOut = detectedSteps
+                            inMotion = (now - lastMotionTimeMs) < MOTION_HOLD_MS
+                        }
+
+                        Sensor.TYPE_GYROSCOPE,
+                        Sensor.TYPE_GYROSCOPE_UNCALIBRATED -> {
+                            val x = vals.getOrElse(0) { 0.0 }
+                            val y = vals.getOrElse(1) { 0.0 }
+                            val z = vals.getOrElse(2) { 0.0 }
+                            val omega = sqrt(x * x + y * y + z * z)
+                            if (omega > GYRO_MOTION_THRESHOLD_RADS) {
+                                lastMotionTimeMs = now
+                            }
+                            inMotion = (now - lastMotionTimeMs) < MOTION_HOLD_MS
+                        }
+                    }
+
                     trySend(
                         LiveTelemetrySample(
                             values = vals,
                             axisLabels = descriptor.axisLabels,
                             unit = descriptor.unit,
                             accuracy = event.accuracy.coerceIn(0, 5),
-                            timestampMs = System.currentTimeMillis()
+                            timestampMs = now,
+                            isInMotion = inMotion,
+                            stepCount = stepOut
                         )
                     )
                 }
@@ -210,6 +301,100 @@ class DeviceSensorManager(context: Context) {
             awaitClose {
                 sensorManager.unregisterListener(listener)
             }
+        }
+    }
+
+    data class MotionStepState(
+        val stepCount: Int,
+        val isInMotion: Boolean
+    )
+
+    fun streamMotionSteps(): Flow<MotionStepState> = callbackFlow {
+        val accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+            ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val hasActivityPerm = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(
+                appContext,
+                Manifest.permission.ACTIVITY_RECOGNITION
+            ) == PackageManager.PERMISSION_GRANTED
+        val stepDetector = if (hasActivityPerm) {
+            sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
+        } else {
+            null
+        }
+
+        if (accelSensor == null && stepDetector == null) {
+            trySend(MotionStepState(stepCount = 0, isInMotion = false))
+            awaitClose { }
+            return@callbackFlow
+        }
+
+        var steps = 0
+        var gravityBaseline = 9.81
+        var lastStepTimeMs = 0L
+        var lastMotionTimeMs = 0L
+        val usesHardwareStepDetector = stepDetector != null
+
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                event ?: return
+                val now = System.currentTimeMillis()
+                when (event.sensor.type) {
+                    Sensor.TYPE_STEP_DETECTOR -> {
+                        steps += 1
+                        lastStepTimeMs = now
+                        lastMotionTimeMs = now
+                    }
+                    Sensor.TYPE_LINEAR_ACCELERATION -> {
+                        val x = event.values.getOrElse(0) { 0f }.toDouble()
+                        val y = event.values.getOrElse(1) { 0f }.toDouble()
+                        val z = event.values.getOrElse(2) { 0f }.toDouble()
+                        val mag = sqrt(x * x + y * y + z * z)
+                        if (mag > MOTION_THRESHOLD_MS2) {
+                            lastMotionTimeMs = now
+                        }
+                        if (!usesHardwareStepDetector &&
+                            mag > STEP_PEAK_THRESHOLD_MS2 &&
+                            (now - lastStepTimeMs) >= STEP_COOLDOWN_MS
+                        ) {
+                            steps += 1
+                            lastStepTimeMs = now
+                            lastMotionTimeMs = now
+                        }
+                    }
+                    Sensor.TYPE_ACCELEROMETER -> {
+                        val x = event.values.getOrElse(0) { 0f }.toDouble()
+                        val y = event.values.getOrElse(1) { 0f }.toDouble()
+                        val z = event.values.getOrElse(2) { 0f }.toDouble()
+                        val mag = sqrt(x * x + y * y + z * z)
+                        gravityBaseline = 0.85 * gravityBaseline + 0.15 * mag
+                        val dynamicMag = kotlin.math.abs(mag - gravityBaseline)
+                        if (dynamicMag > MOTION_THRESHOLD_MS2) {
+                            lastMotionTimeMs = now
+                        }
+                        if (!usesHardwareStepDetector &&
+                            dynamicMag > STEP_PEAK_THRESHOLD_MS2 &&
+                            (now - lastStepTimeMs) >= STEP_COOLDOWN_MS
+                        ) {
+                            steps += 1
+                            lastStepTimeMs = now
+                            lastMotionTimeMs = now
+                        }
+                    }
+                }
+                val inMotion = (now - lastMotionTimeMs) < MOTION_HOLD_MS
+                trySend(MotionStepState(stepCount = steps, isInMotion = inMotion))
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+
+        trySend(MotionStepState(stepCount = 0, isInMotion = false))
+        accelSensor?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
+        stepDetector?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
+
+        awaitClose {
+            sensorManager.unregisterListener(listener)
         }
     }
 
@@ -471,5 +656,10 @@ class DeviceSensorManager(context: Context) {
         const val SENSOR_ID_GPS = "module_gps_location"
         const val SENSOR_ID_MIC = "module_microphone_audio"
         const val SENSOR_ID_CAMERA = "module_camera_optical"
+        private const val MOTION_THRESHOLD_MS2 = 0.75
+        private const val STEP_PEAK_THRESHOLD_MS2 = 1.65
+        private const val GYRO_MOTION_THRESHOLD_RADS = 0.35
+        private const val STEP_COOLDOWN_MS = 280L
+        private const val MOTION_HOLD_MS = 2200L
     }
 }

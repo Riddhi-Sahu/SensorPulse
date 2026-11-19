@@ -4,18 +4,25 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Storage
@@ -28,6 +35,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -44,16 +52,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.auth.AuthViewModel
+import com.example.auth.LocalAuthRepository
 import com.example.data.camera.CameraLocalFileStore
 import com.example.data.model.SensorKind
 import com.example.data.repository.TelemetryRepository
 import com.example.data.sensors.DeviceSensorManager
+import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.CameraSensorScreen
 import com.example.ui.screens.CameraVaultScreen
 import com.example.ui.screens.SensorDashboardScreen
@@ -62,6 +74,7 @@ import com.example.ui.screens.TelemetryLogScreen
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.ObsidianCanvas
 import com.example.ui.theme.SensorPulseTheme
+import com.example.ui.theme.SignalEmerald
 import com.example.ui.theme.SlateSurface
 import com.example.ui.theme.TelemetryAmber
 import com.example.ui.viewmodel.SensorHubViewModel
@@ -114,6 +127,17 @@ fun SensorPulseHud() {
         }
     )
 
+    val authViewModel: AuthViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                val app = checkNotNull(this[APPLICATION_KEY])
+                AuthViewModel(
+                    repository = LocalAuthRepository(app)
+                )
+            }
+        }
+    )
+
     val sensors by hubViewModel.allSensors.collectAsStateWithLifecycle()
     val selectedCategory by hubViewModel.selectedCategory.collectAsStateWithLifecycle()
     val searchQuery by hubViewModel.searchQuery.collectAsStateWithLifecycle()
@@ -122,11 +146,26 @@ fun SensorPulseHud() {
     val liveSample by hubViewModel.liveSample.collectAsStateWithLifecycle()
     val waveformHistory by hubViewModel.waveformHistory.collectAsStateWithLifecycle()
     val streamError by hubViewModel.streamError.collectAsStateWithLifecycle()
+    val isSensorStreaming by hubViewModel.isSensorStreaming.collectAsStateWithLifecycle()
     val isSaving by hubViewModel.isSaving.collectAsStateWithLifecycle()
 
-    val readingsState by vaultViewModel.sensorReadings.collectAsStateWithLifecycle()
+    val activeSessionId by hubViewModel.activeSessionId.collectAsStateWithLifecycle()
+    val sessionStartedAtMs by hubViewModel.sessionStartedAtMs.collectAsStateWithLifecycle()
+    val sessionRecordingSensors by hubViewModel.sessionRecordingSensors.collectAsStateWithLifecycle()
+    val sessionRecordedCount by hubViewModel.sessionRecordedCount.collectAsStateWithLifecycle()
+    val sessionPhotoCount by hubViewModel.sessionPhotoCount.collectAsStateWithLifecycle()
+    val motionStepCount by hubViewModel.motionStepCount.collectAsStateWithLifecycle()
+    val isUserInMotion by hubViewModel.isUserInMotion.collectAsStateWithLifecycle()
+
+    val logState by vaultViewModel.logBundle.collectAsStateWithLifecycle()
     val capturesState by vaultViewModel.cameraCaptures.collectAsStateWithLifecycle()
     val logFilterCategory by vaultViewModel.logFilterCategory.collectAsStateWithLifecycle()
+
+    val currentUser by authViewModel.currentUser.collectAsStateWithLifecycle()
+    val isAuthSubmitting by authViewModel.isSubmitting.collectAsStateWithLifecycle()
+    val authError by authViewModel.errorMessage.collectAsStateWithLifecycle()
+
+    var showAuthScreen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(hubViewModel) {
         hubViewModel.feedback.collect { msg -> snackbarHostState.showSnackbar(msg) }
@@ -134,20 +173,53 @@ fun SensorPulseHud() {
     LaunchedEffect(vaultViewModel) {
         vaultViewModel.vaultFeedback.collect { msg -> snackbarHostState.showSnackbar(msg) }
     }
+    LaunchedEffect(authViewModel) {
+        authViewModel.authEvents.collect { msg -> snackbarHostState.showSnackbar(msg) }
+    }
+
+    if (showAuthScreen) {
+        AuthScreen(
+            currentUser = currentUser,
+            isSubmitting = isAuthSubmitting,
+            errorMessage = authError,
+            onClearError = { authViewModel.clearError() },
+            onSignIn = { u, p ->
+                authViewModel.signIn(u, p) { showAuthScreen = false }
+            },
+            onCreateAccount = { u, p, c ->
+                authViewModel.createAccount(u, p, c) { showAuthScreen = false }
+            },
+            onSignOut = {
+                authViewModel.signOut()
+                showAuthScreen = false
+            },
+            onBack = {
+                authViewModel.clearError()
+                showAuthScreen = false
+            }
+        )
+        return
+    }
 
     val currentActiveSensor = activeSensor
     if (currentActiveSensor != null) {
         val isAuthorized = remember(currentActiveSensor, consentedIds) {
             hubViewModel.hasRequiredPermissions(currentActiveSensor)
         }
+        val isRecordingInSession = remember(currentActiveSensor, sessionRecordingSensors) {
+            sessionRecordingSensors.any { it.id == currentActiveSensor.id }
+        }
         if (currentActiveSensor.kind == SensorKind.CAMERA_OPTICAL) {
             CameraSensorScreen(
                 sensor = currentActiveSensor,
                 isAuthorized = isAuthorized,
+                isSessionActive = activeSessionId != null,
                 isSaving = isSaving,
                 snackbarHostState = snackbarHostState,
                 createOutputFile = { hubViewModel.createCaptureOutputFile() },
                 onPermissionGranted = { hubViewModel.onPermissionGranted(currentActiveSensor) },
+                onStartSession = { hubViewModel.startRecordingSession() },
+                onStopSession = { hubViewModel.stopRecordingSession() },
                 onCaptureStored = { file, facing, flash, focal, caption ->
                     hubViewModel.persistCameraCapture(file, facing, flash, focal, caption)
                 },
@@ -157,12 +229,22 @@ fun SensorPulseHud() {
             SensorDetailScreen(
                 sensor = currentActiveSensor,
                 isAuthorized = isAuthorized,
+                isStreaming = isSensorStreaming,
+                isSessionActive = activeSessionId != null,
+                isRecordingInSession = isRecordingInSession,
+                motionStepCount = motionStepCount,
+                isUserInMotion = isUserInMotion,
                 liveSample = liveSample,
                 waveformHistory = waveformHistory,
                 streamError = streamError,
                 isSaving = isSaving,
                 snackbarHostState = snackbarHostState,
                 onPermissionGranted = { hubViewModel.onPermissionGranted(currentActiveSensor) },
+                onStopSensor = { hubViewModel.stopSensor(currentActiveSensor.id) },
+                onResumeSensor = { hubViewModel.resumeActiveSensor() },
+                onResetSteps = { hubViewModel.resetMotionSteps() },
+                onStartSession = { hubViewModel.startRecordingSession() },
+                onStopSession = { hubViewModel.stopRecordingSession() },
                 onSaveSnapshot = { notes -> hubViewModel.saveCurrentSnapshot(notes) },
                 onBack = { hubViewModel.closeActiveSensor() }
             )
@@ -189,9 +271,48 @@ fun SensorPulseHud() {
                                 color = ElectricCyan
                             )
                             Text(
-                                text = "LOCAL DEVICE TELEMETRY & CAMERA VAULT",
+                                text = if (activeSessionId != null) {
+                                    "SESSION ACTIVE • ${sessionRecordingSensors.size} RECORDING"
+                                } else {
+                                    "LOCAL DEVICE TELEMETRY & CAMERA VAULT"
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    actions = {
+                        val user = currentUser
+                        OutlinedButton(
+                            onClick = { showAuthScreen = true },
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .height(48.dp)
+                                .testTag(if (user == null) "top_login_button" else "top_account_button"),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (user == null) ElectricCyan.copy(alpha = 0.7f) else SignalEmerald.copy(alpha = 0.7f)
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (user == null) {
+                                    Icons.AutoMirrored.Filled.Login
+                                } else {
+                                    Icons.Filled.AccountCircle
+                                },
+                                contentDescription = if (user == null) "Login" else "Account ${user.username}",
+                                tint = if (user == null) ElectricCyan else SignalEmerald,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = user?.username ?: "Login",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (user == null) ElectricCyan else SignalEmerald,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     },
@@ -276,18 +397,29 @@ fun SensorPulseHud() {
                             sensors = sensors,
                             selectedCategory = selectedCategory,
                             searchQuery = searchQuery,
+                            activeSessionId = activeSessionId,
+                            sessionStartedAtMs = sessionStartedAtMs,
+                            sessionRecordingSensors = sessionRecordingSensors,
+                            sessionRecordedCount = sessionRecordedCount,
+                            sessionPhotoCount = sessionPhotoCount,
+                            motionStepCount = motionStepCount,
+                            isUserInMotion = isUserInMotion,
                             hasPermissionsCheck = { s ->
                                 s.id in consentedIds && hubViewModel.hasRequiredPermissions(s)
                             },
                             onCategorySelected = { hubViewModel.selectCategory(it) },
                             onSearchQueryChange = { hubViewModel.updateSearchQuery(it) },
+                            onStartSession = { hubViewModel.startRecordingSession() },
+                            onStopSession = { hubViewModel.stopRecordingSession() },
+                            onStopSensor = { hubViewModel.stopSensor(it) },
                             onSensorClick = { hubViewModel.openSensor(it) }
                         )
 
                         HudTab.LOGS -> TelemetryLogScreen(
-                            readingsState = readingsState,
+                            logState = logState,
                             filterCategory = logFilterCategory,
                             onFilterCategoryChange = { vaultViewModel.setLogFilterCategory(it) },
+                            onDeleteSession = { sid -> vaultViewModel.deleteSession(sid) },
                             onUpdateNote = { id, notes -> vaultViewModel.updateReadingNotes(id, notes) },
                             onDeleteReading = { id -> vaultViewModel.deleteSensorReading(id) }
                         )

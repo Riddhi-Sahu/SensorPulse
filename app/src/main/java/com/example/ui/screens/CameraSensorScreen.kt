@@ -38,8 +38,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +49,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -91,10 +94,13 @@ import kotlinx.coroutines.launch
 fun CameraSensorScreen(
     sensor: SensorDescriptor,
     isAuthorized: Boolean,
+    isSessionActive: Boolean,
     isSaving: Boolean,
     snackbarHostState: SnackbarHostState,
     createOutputFile: () -> File,
     onPermissionGranted: () -> Unit,
+    onStartSession: () -> Unit,
+    onStopSession: () -> Unit,
     onCaptureStored: (
         savedFile: File,
         lensFacing: String,
@@ -342,22 +348,82 @@ fun CameraSensorScreen(
                         }
                     }
 
-                    // Separate Storage Explanation + Capture Action
+                    // Session Status + Capture Action
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = BorderStroke(1.dp, HudBorder)
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSessionActive) SignalEmerald.copy(alpha = 0.7f) else HudBorder
+                        )
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text(
-                                text = "LOCAL JPEG FILE + LOCAL CAMERA VAULT DATABASE",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TelemetryAmber
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (isSessionActive) {
+                                        "CAPTURES WILL BE STORED WITH ACTIVE SESSION"
+                                    } else {
+                                        "LOCAL JPEG + CAMERA VAULT DATABASE"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSessionActive) SignalEmerald else TelemetryAmber,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                if (isSessionActive) {
+                                    OutlinedButton(
+                                        onClick = onStopSession,
+                                        modifier = Modifier
+                                            .height(48.dp)
+                                            .testTag("camera_stop_session_button"),
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, AlertCrimson.copy(alpha = 0.7f))
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Stop,
+                                            contentDescription = null,
+                                            tint = AlertCrimson,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Stop Session",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = AlertCrimson
+                                        )
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = onStartSession,
+                                        modifier = Modifier
+                                            .height(48.dp)
+                                            .testTag("camera_start_session_button"),
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.7f))
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.FiberManualRecord,
+                                            contentDescription = null,
+                                            tint = ElectricCyan,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Start Session",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = ElectricCyan
+                                        )
+                                    }
+                                }
+                            }
                             OutlinedTextField(
                                 value = caption,
                                 onValueChange = { if (it.length <= 240) caption = it },

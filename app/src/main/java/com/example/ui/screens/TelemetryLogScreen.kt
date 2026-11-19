@@ -1,7 +1,9 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,8 +22,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,15 +42,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.example.R
+import com.example.data.model.CameraCaptureRecord
 import com.example.data.model.SensorCategory
 import com.example.data.model.SensorReading
 import com.example.ui.components.sensorCategoryColor
@@ -52,22 +63,28 @@ import com.example.ui.theme.AlertCrimson
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.HudBorder
 import com.example.ui.theme.SignalEmerald
+import com.example.ui.theme.TelemetryAmber
+import com.example.ui.viewmodel.SessionWithReadings
+import com.example.ui.viewmodel.TelemetryLogBundle
 import com.example.ui.viewmodel.UiState
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @Composable
 fun TelemetryLogScreen(
-    readingsState: UiState<List<SensorReading>>,
+    logState: UiState<TelemetryLogBundle>,
     filterCategory: String?,
     onFilterCategoryChange: (String?) -> Unit,
+    onDeleteSession: (sessionId: Long) -> Unit,
     onUpdateNote: (readingId: Long, notes: String) -> Unit,
     onDeleteReading: (readingId: Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var editingReading by remember { mutableStateOf<SensorReading?>(null) }
     var editingNoteText by remember { mutableStateOf("") }
+    val expandedSessions = remember { mutableStateMapOf<Long, Boolean>() }
 
     Column(
         modifier = modifier
@@ -76,7 +93,7 @@ fun TelemetryLogScreen(
     ) {
         Spacer(modifier = Modifier.height(8.dp))
 
-        when (readingsState) {
+        when (logState) {
             is UiState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = ElectricCyan)
@@ -90,7 +107,7 @@ fun TelemetryLogScreen(
                         color = MaterialTheme.colorScheme.errorContainer
                     ) {
                         Text(
-                            text = readingsState.message,
+                            text = logState.message,
                             style = MaterialTheme.typography.bodyLarge,
                             color = AlertCrimson,
                             modifier = Modifier.padding(20.dp)
@@ -100,13 +117,20 @@ fun TelemetryLogScreen(
             }
 
             is UiState.Success -> {
-                val allReadings = readingsState.data
-                val distinctCats = remember(allReadings) {
-                    allReadings.map { it.sensorCategory }.distinct()
+                val bundle = logState.data
+                val allReadings = remember(bundle) {
+                    bundle.sessions.flatMap { it.readings } + bundle.standaloneReadings
                 }
-                val visibleReadings = remember(allReadings, filterCategory) {
-                    val sorted = allReadings.sortedByDescending { it.createdAtMs }
-                    if (filterCategory == null) sorted else sorted.filter { it.sensorCategory == filterCategory }
+                val totalCaptureCount = remember(bundle) {
+                    bundle.sessions.sumOf { it.captures.size }
+                }
+                val distinctCats = remember(allReadings, totalCaptureCount) {
+                    buildList {
+                        addAll(allReadings.map { it.sensorCategory }.distinct())
+                        if (totalCaptureCount > 0 && SensorCategory.CAMERA.firestoreValue !in this) {
+                            add(SensorCategory.CAMERA.firestoreValue)
+                        }
+                    }
                 }
 
                 if (distinctCats.isNotEmpty()) {
@@ -144,7 +168,34 @@ fun TelemetryLogScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                if (visibleReadings.isEmpty()) {
+                val filteredSessions = remember(bundle.sessions, filterCategory) {
+                    if (filterCategory == null) {
+                        bundle.sessions
+                    } else {
+                        bundle.sessions.mapNotNull { swr ->
+                            val matching = swr.readings.filter { it.sensorCategory == filterCategory }
+                            val matchingCaptures = if (filterCategory == SensorCategory.CAMERA.firestoreValue) {
+                                swr.captures
+                            } else {
+                                emptyList()
+                            }
+                            if (matching.isEmpty() && matchingCaptures.isEmpty()) {
+                                null
+                            } else {
+                                swr.copy(readings = matching, captures = matchingCaptures)
+                            }
+                        }
+                    }
+                }
+                val filteredStandalone = remember(bundle.standaloneReadings, filterCategory) {
+                    if (filterCategory == null) {
+                        bundle.standaloneReadings
+                    } else {
+                        bundle.standaloneReadings.filter { it.sensorCategory == filterCategory }
+                    }
+                }
+
+                if (filteredSessions.isEmpty() && filteredStandalone.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -175,15 +226,43 @@ fun TelemetryLogScreen(
                         contentPadding = PaddingValues(bottom = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(visibleReadings, key = { it.id }) { item ->
-                            SensorReadingCard(
-                                item = item,
-                                onEditNote = {
-                                    editingReading = item
-                                    editingNoteText = item.notes.orEmpty()
+                        items(filteredSessions, key = { "session_${it.session.id}" }) { bundleItem ->
+                            val isExpanded = expandedSessions[bundleItem.session.id]
+                                ?: (filteredSessions.firstOrNull()?.session?.id == bundleItem.session.id)
+                            SessionGroupCard(
+                                item = bundleItem,
+                                expanded = isExpanded,
+                                onToggleExpand = {
+                                    expandedSessions[bundleItem.session.id] = !isExpanded
                                 },
-                                onDelete = { onDeleteReading(item.id) }
+                                onDeleteSession = { onDeleteSession(bundleItem.session.id) },
+                                onEditNote = { reading ->
+                                    editingReading = reading
+                                    editingNoteText = reading.notes.orEmpty()
+                                },
+                                onDeleteReading = onDeleteReading
                             )
+                        }
+
+                        if (filteredStandalone.isNotEmpty()) {
+                            item(key = "standalone_header") {
+                                Text(
+                                    text = "INDIVIDUAL SNAPSHOTS",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 6.dp)
+                                )
+                            }
+                            items(filteredStandalone, key = { "reading_${it.id}" }) { item ->
+                                SensorReadingCard(
+                                    item = item,
+                                    onEditNote = {
+                                        editingReading = item
+                                        editingNoteText = item.notes.orEmpty()
+                                    },
+                                    onDelete = { onDeleteReading(item.id) }
+                                )
+                            }
                         }
                     }
                 }
@@ -223,6 +302,227 @@ fun TelemetryLogScreen(
 }
 
 @Composable
+private fun SessionGroupCard(
+    item: SessionWithReadings,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onDeleteSession: () -> Unit,
+    onEditNote: (SensorReading) -> Unit,
+    onDeleteReading: (Long) -> Unit
+) {
+    val session = item.session
+    val distinctSensors = remember(item.readings) {
+        item.readings.map { it.sensorName }.distinct()
+    }
+    val durationText = remember(session.startedAtMs, session.endedAtMs, session.isActive) {
+        if (session.isActive) {
+            "LIVE"
+        } else {
+            val end = session.endedAtMs ?: session.startedAtMs
+            val totalSec = ((end - session.startedAtMs) / 1000L).coerceAtLeast(0L)
+            String.format(Locale.US, "%02d:%02d", totalSec / 60L, totalSec % 60L)
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("session_card_${session.id}"),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(
+            1.dp,
+            if (session.isActive) SignalEmerald.copy(alpha = 0.7f) else ElectricCyan.copy(alpha = 0.45f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onToggleExpand),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (session.isActive) "RECORDING" else "SESSION • $durationText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (session.isActive) AlertCrimson else SignalEmerald
+                        )
+                        if (session.totalSteps > 0) {
+                            Text(
+                                text = "• ${session.totalSteps} STEPS",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TelemetryAmber
+                            )
+                        }
+                    }
+                    Text(
+                        text = session.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    val photoLabel = if (item.captures.isNotEmpty()) {
+                        " • ${item.captures.size} photo(s)"
+                    } else {
+                        ""
+                    }
+                    Text(
+                        text = "${distinctSensors.size} sensor(s) • ${item.readings.size} reading(s)$photoLabel",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!session.isActive) {
+                        IconButton(onClick = onDeleteSession) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = "Delete session",
+                                tint = AlertCrimson
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (expanded) "Collapse session" else "Expand session",
+                        tint = ElectricCyan
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (item.captures.isEmpty() && item.readings.isEmpty()) {
+                        Text(
+                            text = "No readings or photos captured in this session yet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        item.captures.forEach { capture ->
+                            SessionPhotoCard(capture = capture)
+                        }
+                        item.readings.forEach { reading ->
+                            SensorReadingCard(
+                                item = reading,
+                                onEditNote = { onEditNote(reading) },
+                                onDelete = { onDeleteReading(reading.id) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionPhotoCard(capture: CameraCaptureRecord) {
+    val file = remember(capture.localFilePath) { File(capture.localFilePath) }
+    val exists = remember(capture.localFilePath) { file.exists() }
+    val formattedDate = remember(capture.createdAtMs) {
+        SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()).format(Date(capture.createdAtMs))
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("session_photo_card_${capture.id}"),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, TelemetryAmber.copy(alpha = 0.55f))
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CameraAlt,
+                        contentDescription = null,
+                        tint = TelemetryAmber,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "SESSION PHOTO • ${capture.lensFacing.uppercase()} • $formattedDate",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TelemetryAmber
+                    )
+                }
+                Text(
+                    text = "${capture.widthPx}×${capture.heightPx}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ElectricCyan
+                )
+            }
+
+            if (exists) {
+                AsyncImage(
+                    model = file,
+                    contentDescription = capture.fileName,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(84.dp)
+                        .background(MaterialTheme.colorScheme.background, RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.BrokenImage,
+                            contentDescription = null,
+                            tint = TelemetryAmber,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = capture.fileName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (!capture.caption.isNullOrBlank()) {
+                Text(
+                    text = capture.caption,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SignalEmerald
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun SensorReadingCard(
     item: SensorReading,
     onEditNote: () -> Unit,
@@ -239,12 +539,12 @@ private fun SensorReadingCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("log_card_${item.id}"),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, HudBorder)
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
@@ -254,7 +554,10 @@ private fun SensorReadingCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "${category.label.uppercase()} • $formattedDate",
+                        text = buildString {
+                            append("${category.label.uppercase()} • $formattedDate")
+                            if (item.stepCount > 0) append(" • ${item.stepCount} STEPS")
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = accent
                     )
@@ -283,7 +586,6 @@ private fun SensorReadingCard(
                 }
             }
 
-            // Tabular readings strip
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
