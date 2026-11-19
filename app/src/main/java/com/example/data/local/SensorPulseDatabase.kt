@@ -13,12 +13,13 @@ import androidx.room.TypeConverters
         SensorReadingEntity::class,
         CameraCaptureEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(TelemetryConverters::class)
 abstract class SensorPulseDatabase : RoomDatabase() {
 
+    abstract fun authDao(): AuthDao
     abstract fun telemetryDao(): TelemetryDao
 
     companion object {

@@ -1,7 +1,10 @@
 package com.example.data.local
 
+import androidx.room.Embedded
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.Relation
 import androidx.room.TypeConverter
 import com.example.data.model.CameraCaptureRecord
 import com.example.data.model.LocalUser
@@ -9,14 +12,19 @@ import com.example.data.model.RecordingSession
 import com.example.data.model.SensorReading
 import org.json.JSONArray
 
-@Entity(tableName = "local_users")
+@Entity(
+    tableName = "local_users",
+    indices = [Index(value = ["usernameNormalized"], unique = true)]
+)
 data class LocalUserEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
     val username: String,
     val usernameNormalized: String,
     val passwordHash: String,
     val saltHex: String,
-    val createdAtMs: Long
+    val createdAtMs: Long,
+    val lastLoginAtMs: Long = createdAtMs,
+    val isSignedIn: Boolean = false
 ) {
     fun toModel(): LocalUser = LocalUser(
         id = id,
@@ -28,6 +36,8 @@ data class LocalUserEntity(
 @Entity(tableName = "recording_sessions")
 data class RecordingSessionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val userId: Long? = null,
+    val ownerUsername: String? = null,
     val title: String,
     val startedAtMs: Long,
     val endedAtMs: Long? = null,
@@ -36,6 +46,8 @@ data class RecordingSessionEntity(
 ) {
     fun toModel(): RecordingSession = RecordingSession(
         id = id,
+        userId = userId,
+        ownerUsername = ownerUsername,
         title = title,
         startedAtMs = startedAtMs,
         endedAtMs = endedAtMs,
@@ -43,6 +55,20 @@ data class RecordingSessionEntity(
         totalSteps = totalSteps
     )
 }
+
+data class SessionWithTelemetry(
+    @Embedded val session: RecordingSessionEntity,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "sessionId"
+    )
+    val readings: List<SensorReadingEntity>,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "sessionId"
+    )
+    val captures: List<CameraCaptureEntity>
+)
 
 @Entity(tableName = "sensor_readings")
 data class SensorReadingEntity(

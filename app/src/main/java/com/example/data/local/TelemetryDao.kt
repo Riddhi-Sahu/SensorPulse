@@ -4,19 +4,21 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TelemetryDao {
 
-    @Insert(onConflict = OnConflictStrategy.ABORT)
-    suspend fun insertUser(entity: LocalUserEntity): Long
-
-    @Query("SELECT * FROM local_users WHERE usernameNormalized = :usernameNormalized LIMIT 1")
-    suspend fun findUserByUsernameNormalized(usernameNormalized: String): LocalUserEntity?
-
     @Query("SELECT * FROM recording_sessions ORDER BY startedAtMs DESC")
     fun observeSessions(): Flow<List<RecordingSessionEntity>>
+
+    @Transaction
+    @Query("SELECT * FROM recording_sessions ORDER BY startedAtMs DESC")
+    fun observeSessionsWithTelemetry(): Flow<List<SessionWithTelemetry>>
+
+    @Query("SELECT * FROM recording_sessions WHERE userId = :userId ORDER BY startedAtMs DESC")
+    fun observeSessionsForUser(userId: Long): Flow<List<RecordingSessionEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(entity: RecordingSessionEntity): Long

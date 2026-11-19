@@ -84,8 +84,10 @@ class AuthViewModel(
     }
 
     fun signOut() {
-        repository.signOut()
         _errorMessage.value = null
-        _authEvents.tryEmit("Signed out")
+        viewModelScope.launch {
+            repository.signOut()
+            _authEvents.tryEmit("Signed out")
+        }
     }
 }

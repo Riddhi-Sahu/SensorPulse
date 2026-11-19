@@ -116,12 +116,19 @@ class SensorHubViewModel(
             sensorManager.hasSystemPermissions(descriptor)
     }
 
-    fun startRecordingSession() {
+    fun startRecordingSession(
+        userId: Long? = null,
+        ownerUsername: String? = null
+    ) {
         if (_activeSessionId.value != null) return
         viewModelScope.launch {
             val timeLabel = SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()).format(Date())
             val title = "Session • $timeLabel"
-            repository.startSession(title).fold(
+            repository.startSession(
+                title = title,
+                userId = userId,
+                ownerUsername = ownerUsername
+            ).fold(
                 onSuccess = { sessionId ->
                     _activeSessionId.value = sessionId
                     _sessionStartedAtMs.value = System.currentTimeMillis()

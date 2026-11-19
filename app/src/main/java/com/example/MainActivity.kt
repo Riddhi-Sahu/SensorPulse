@@ -250,7 +250,9 @@ fun SensorPulseHud() {
                 snackbarHostState = snackbarHostState,
                 createOutputFile = { hubViewModel.createCaptureOutputFile() },
                 onPermissionGranted = { hubViewModel.onPermissionGranted(currentActiveSensor) },
-                onStartSession = { hubViewModel.startRecordingSession() },
+                onStartSession = {
+                    hubViewModel.startRecordingSession(currentUser?.id, currentUser?.username)
+                },
                 onStopSession = { hubViewModel.stopRecordingSession() },
                 onCaptureStored = { file, facing, flash, focal, caption ->
                     hubViewModel.persistCameraCapture(file, facing, flash, focal, caption)
@@ -275,7 +277,9 @@ fun SensorPulseHud() {
                 onStopSensor = { hubViewModel.stopSensor(currentActiveSensor.id) },
                 onResumeSensor = { hubViewModel.resumeActiveSensor() },
                 onResetSteps = { hubViewModel.resetMotionSteps() },
-                onStartSession = { hubViewModel.startRecordingSession() },
+                onStartSession = {
+                    hubViewModel.startRecordingSession(currentUser?.id, currentUser?.username)
+                },
                 onStopSession = { hubViewModel.stopRecordingSession() },
                 onSaveSnapshot = { notes -> hubViewModel.saveCurrentSnapshot(notes) },
                 onBack = { hubViewModel.closeActiveSensor() }
@@ -441,7 +445,9 @@ fun SensorPulseHud() {
                             },
                             onCategorySelected = { hubViewModel.selectCategory(it) },
                             onSearchQueryChange = { hubViewModel.updateSearchQuery(it) },
-                            onStartSession = { hubViewModel.startRecordingSession() },
+                            onStartSession = {
+                                hubViewModel.startRecordingSession(currentUser?.id, currentUser?.username)
+                            },
                             onStopSession = { hubViewModel.stopRecordingSession() },
                             onStopSensor = { hubViewModel.stopSensor(it) },
                             onSensorClick = { hubViewModel.openSensor(it) }

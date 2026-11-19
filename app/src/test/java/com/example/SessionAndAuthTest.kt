@@ -36,14 +36,15 @@ class SessionAndAuthTest {
     private lateinit var authRepository: LocalAuthRepository
 
     @Before
-    fun setUp() {
+    fun setUp() = runBlocking {
         context = ApplicationProvider.getApplicationContext()
         db = Room.inMemoryDatabaseBuilder(context, SensorPulseDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         val dao = db.telemetryDao()
+        val authDao = db.authDao()
         repository = TelemetryRepository(dao)
-        authRepository = LocalAuthRepository(context, dao)
+        authRepository = LocalAuthRepository(context, authDao)
         authRepository.signOut()
     }
 
@@ -83,11 +84,21 @@ class SessionAndAuthTest {
         val signedIn = authRepository.signIn("riddh_101", "Pass@1234")
         assertTrue(signedIn.isSuccess)
         assertEquals("Riddh_101", authRepository.currentUser.value?.username)
+
+        // Verify Room AuthDao persists signed-in state across repository instances
+        val restoredRepo = LocalAuthRepository(context, db.authDao())
+        restoredRepo.restoreSession()
+        assertEquals("Riddh_101", restoredRepo.currentUser.value?.username)
     }
 
     @Test
     fun `camera capture links to active session`() = runBlocking {
-        val sessionId = repository.startSession("Session Test").getOrThrow()
+        val user = authRepository.signUp("alex_104", "Pass@1234", "Pass@1234").getOrThrow()
+        val sessionId = repository.startSession(
+            title = "Session Test",
+            userId = user.id,
+            ownerUsername = user.username
+        ).getOrThrow()
         val saveCapture = repository.saveCameraCapture(
             sessionId = sessionId,
             fileName = "frame_01.jpg",
@@ -110,6 +121,12 @@ class SessionAndAuthTest {
         val sessions = repository.observeSessions().first()
         assertFalse(sessions.first().isActive)
         assertEquals(12, sessions.first().totalSteps)
+        assertEquals(user.id, sessions.first().userId)
+        assertEquals("alex_104", sessions.first().ownerUsername)
+
+        val bundles = db.telemetryDao().observeSessionsWithTelemetry().first()
+        assertEquals(1, bundles.size)
+        assertEquals(1, bundles.first().captures.size)
     }
 
     @Test

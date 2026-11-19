@@ -32,11 +32,17 @@ class TelemetryRepository(
     fun observeCameraCaptures(): Flow<List<CameraCaptureRecord>> =
         dao.observeCameraCaptures().map { list -> list.map { it.toModel() } }
 
-    suspend fun startSession(title: String): Result<Long> {
+    suspend fun startSession(
+        title: String,
+        userId: Long? = null,
+        ownerUsername: String? = null
+    ): Result<Long> {
         return try {
             val now = System.currentTimeMillis()
             val id = dao.insertSession(
                 RecordingSessionEntity(
+                    userId = userId,
+                    ownerUsername = ownerUsername?.trim()?.takeIf { it.isNotEmpty() },
                     title = title.ifBlank { "Telemetry Session" },
                     startedAtMs = now,
                     endedAtMs = null,

@@ -1,9 +1,9 @@
 package com.example.auth
 
 import android.content.Context
+import com.example.data.local.AuthDao
 import com.example.data.local.LocalUserEntity
 import com.example.data.local.SensorPulseDatabase
-import com.example.data.local.TelemetryDao
 import com.example.data.model.LocalUser
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -16,20 +16,14 @@ import kotlinx.coroutines.withContext
 
 class LocalAuthRepository(
     context: Context,
-    private val dao: TelemetryDao = SensorPulseDatabase.getInstance(context).telemetryDao()
+    private val authDao: AuthDao = SensorPulseDatabase.getInstance(context).authDao()
 ) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val _currentUser = MutableStateFlow<LocalUser?>(null)
     val currentUser: StateFlow<LocalUser?> = _currentUser.asStateFlow()
 
     suspend fun restoreSession() {
-        val savedNormalized = prefs.getString(KEY_ACTIVE_USERNAME, null)?.trim()?.lowercase()
-        if (savedNormalized.isNullOrBlank()) {
-            _currentUser.value = null
-            return
-        }
         val entity = withContext(Dispatchers.IO) {
-            runCatching { dao.findUserByUsernameNormalized(savedNormalized) }.getOrNull()
+            runCatching { authDao.findSignedInUser() }.getOrNull()
         }
         _currentUser.value = entity?.toModel()
     }
@@ -68,7 +62,7 @@ class LocalAuthRepository(
             }
 
             val existing = withContext(Dispatchers.IO) {
-                dao.findUserByUsernameNormalized(normalized)
+                authDao.findUserByUsernameNormalized(normalized)
             }
             if (existing != null) {
                 return Result.failure(IllegalStateException("Username \"$trimmedUser\" is already taken"))
@@ -82,11 +76,15 @@ class LocalAuthRepository(
                 usernameNormalized = normalized,
                 passwordHash = hashHex,
                 saltHex = saltHex,
-                createdAtMs = now
+                createdAtMs = now,
+                lastLoginAtMs = now,
+                isSignedIn = true
             )
-            val insertedId = withContext(Dispatchers.IO) { dao.insertUser(entity) }
+            val insertedId = withContext(Dispatchers.IO) {
+                authDao.clearSignedInUsers()
+                authDao.insertUser(entity)
+            }
             val user = LocalUser(id = insertedId, username = trimmedUser, createdAtMs = now)
-            prefs.edit().putString(KEY_ACTIVE_USERNAME, normalized).apply()
             _currentUser.value = user
             Result.success(user)
         } catch (e: CancellationException) {
@@ -107,7 +105,7 @@ class LocalAuthRepository(
             require(password.isNotEmpty()) { "Enter your password" }
 
             val existing = withContext(Dispatchers.IO) {
-                dao.findUserByUsernameNormalized(normalized)
+                authDao.findUserByUsernameNormalized(normalized)
             } ?: return Result.failure(
                 IllegalStateException("No account found for \"$trimmedUser\". Tap Create Account to register.")
             )
@@ -121,8 +119,12 @@ class LocalAuthRepository(
                 return Result.failure(IllegalArgumentException("Incorrect password"))
             }
 
+            val now = System.currentTimeMillis()
+            withContext(Dispatchers.IO) {
+                authDao.clearSignedInUsers()
+                authDao.markUserSignedIn(existing.id, now)
+            }
             val user = existing.toModel()
-            prefs.edit().putString(KEY_ACTIVE_USERNAME, normalized).apply()
             _currentUser.value = user
             Result.success(user)
         } catch (e: CancellationException) {
@@ -132,9 +134,11 @@ class LocalAuthRepository(
         }
     }
 
-    fun signOut() {
-        prefs.edit().remove(KEY_ACTIVE_USERNAME).apply()
+    suspend fun signOut() {
         _currentUser.value = null
+        withContext(Dispatchers.IO) {
+            runCatching { authDao.clearSignedInUsers() }
+        }
     }
 
     private fun generateSaltHex(): String {

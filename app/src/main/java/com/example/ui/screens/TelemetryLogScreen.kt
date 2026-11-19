@@ -372,8 +372,9 @@ private fun SessionGroupCard(
                     } else {
                         ""
                     }
+                    val ownerLabel = session.ownerUsername?.let { " • @$it" }.orEmpty()
                     Text(
-                        text = "${distinctSensors.size} sensor(s) • ${item.readings.size} reading(s)$photoLabel",
+                        text = "${distinctSensors.size} sensor(s) • ${item.readings.size} reading(s)$photoLabel$ownerLabel",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

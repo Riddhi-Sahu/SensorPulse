@@ -54,6 +54,8 @@ data class LiveTelemetrySample(
 
 data class RecordingSession(
     val id: Long = 0L,
+    val userId: Long? = null,
+    val ownerUsername: String? = null,
     val title: String = "",
     val startedAtMs: Long = 0L,
     val endedAtMs: Long? = null,
