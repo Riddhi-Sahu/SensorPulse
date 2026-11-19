@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -44,6 +45,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,15 +78,17 @@ import com.example.ui.theme.TelemetryAmber
 @Composable
 fun AuthScreen(
     currentUser: LocalUser?,
+    allowDismiss: Boolean,
     isSubmitting: Boolean,
     errorMessage: String?,
+    snackbarHostState: SnackbarHostState,
     onClearError: () -> Unit,
     onSignIn: (username: String, password: String) -> Unit,
     onCreateAccount: (username: String, password: String, confirmPassword: String) -> Unit,
     onSignOut: () -> Unit,
     onBack: () -> Unit
 ) {
-    BackHandler(onBack = onBack)
+    BackHandler(enabled = allowDismiss, onBack = onBack)
 
     var isCreateMode by rememberSaveable { mutableStateOf(false) }
     var username by rememberSaveable { mutableStateOf("") }
@@ -93,13 +98,14 @@ fun AuthScreen(
 
     Scaffold(
         containerColor = ObsidianCanvas,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text(
-                            text = "OPERATOR ACCOUNT",
+                            text = if (allowDismiss) "OPERATOR ACCOUNT" else "SENSORPULSE HUD",
                             style = MaterialTheme.typography.labelSmall,
                             color = ElectricCyan
                         )
@@ -116,14 +122,16 @@ fun AuthScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.testTag("auth_back_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back to SensorPulse"
-                        )
+                    if (allowDismiss) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.testTag("auth_back_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back to SensorPulse"
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -136,7 +144,8 @@ fun AuthScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .imePadding(),
             contentAlignment = Alignment.TopCenter
         ) {
             Column(

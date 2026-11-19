@@ -17,6 +17,9 @@ class AuthViewModel(
 
     val currentUser: StateFlow<LocalUser?> = repository.currentUser
 
+    private val _isRestoringSession = MutableStateFlow(true)
+    val isRestoringSession: StateFlow<Boolean> = _isRestoringSession.asStateFlow()
+
     private val _isSubmitting = MutableStateFlow(false)
     val isSubmitting: StateFlow<Boolean> = _isSubmitting.asStateFlow()
 
@@ -29,6 +32,7 @@ class AuthViewModel(
     init {
         viewModelScope.launch {
             repository.restoreSession()
+            _isRestoringSession.value = false
         }
     }
 

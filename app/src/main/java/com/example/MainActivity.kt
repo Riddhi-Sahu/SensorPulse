@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +52,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -162,6 +166,7 @@ fun SensorPulseHud() {
     val logFilterCategory by vaultViewModel.logFilterCategory.collectAsStateWithLifecycle()
 
     val currentUser by authViewModel.currentUser.collectAsStateWithLifecycle()
+    val isRestoringSession by authViewModel.isRestoringSession.collectAsStateWithLifecycle()
     val isAuthSubmitting by authViewModel.isSubmitting.collectAsStateWithLifecycle()
     val authError by authViewModel.errorMessage.collectAsStateWithLifecycle()
 
@@ -177,11 +182,35 @@ fun SensorPulseHud() {
         authViewModel.authEvents.collect { msg -> snackbarHostState.showSnackbar(msg) }
     }
 
-    if (showAuthScreen) {
+    if (isRestoringSession) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(ObsidianCanvas),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CircularProgressIndicator(color = ElectricCyan)
+                Text(
+                    text = "SENSORPULSE HUD",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = ElectricCyan
+                )
+            }
+        }
+        return
+    }
+
+    if (currentUser == null || showAuthScreen) {
         AuthScreen(
             currentUser = currentUser,
+            allowDismiss = currentUser != null,
             isSubmitting = isAuthSubmitting,
             errorMessage = authError,
+            snackbarHostState = snackbarHostState,
             onClearError = { authViewModel.clearError() },
             onSignIn = { u, p ->
                 authViewModel.signIn(u, p) { showAuthScreen = false }
@@ -190,6 +219,9 @@ fun SensorPulseHud() {
                 authViewModel.createAccount(u, p, c) { showAuthScreen = false }
             },
             onSignOut = {
+                if (activeSessionId != null) {
+                    hubViewModel.stopRecordingSession()
+                }
                 authViewModel.signOut()
                 showAuthScreen = false
             },
