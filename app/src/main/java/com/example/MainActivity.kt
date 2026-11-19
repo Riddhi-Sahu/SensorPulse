@@ -54,6 +54,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -106,6 +107,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun SensorPulseHud() {
     val snackbarHostState = remember { SnackbarHostState() }
+    val appContext = LocalContext.current
 
     val hubViewModel: SensorHubViewModel = viewModel(
         factory = viewModelFactory {
@@ -160,10 +162,13 @@ fun SensorPulseHud() {
     val sessionPhotoCount by hubViewModel.sessionPhotoCount.collectAsStateWithLifecycle()
     val motionStepCount by hubViewModel.motionStepCount.collectAsStateWithLifecycle()
     val isUserInMotion by hubViewModel.isUserInMotion.collectAsStateWithLifecycle()
+    val dashboardTrendSensor by hubViewModel.dashboardTrendSensor.collectAsStateWithLifecycle()
+    val dashboardTrendSamples by hubViewModel.dashboardTrendSamples.collectAsStateWithLifecycle()
 
     val logState by vaultViewModel.logBundle.collectAsStateWithLifecycle()
     val capturesState by vaultViewModel.cameraCaptures.collectAsStateWithLifecycle()
     val logFilterCategory by vaultViewModel.logFilterCategory.collectAsStateWithLifecycle()
+    val isExportingCsv by vaultViewModel.isExporting.collectAsStateWithLifecycle()
 
     val currentUser by authViewModel.currentUser.collectAsStateWithLifecycle()
     val isRestoringSession by authViewModel.isRestoringSession.collectAsStateWithLifecycle()
@@ -440,6 +445,8 @@ fun SensorPulseHud() {
                             sessionPhotoCount = sessionPhotoCount,
                             motionStepCount = motionStepCount,
                             isUserInMotion = isUserInMotion,
+                            dashboardTrendSensor = dashboardTrendSensor,
+                            dashboardTrendSamples = dashboardTrendSamples,
                             hasPermissionsCheck = { s ->
                                 s.id in consentedIds && hubViewModel.hasRequiredPermissions(s)
                             },
@@ -450,6 +457,8 @@ fun SensorPulseHud() {
                             },
                             onStopSession = { hubViewModel.stopRecordingSession() },
                             onStopSensor = { hubViewModel.stopSensor(it) },
+                            onSelectDashboardTrendSensor = { hubViewModel.selectDashboardTrendSensor(it) },
+                            onStopDashboardTrend = { hubViewModel.stopDashboardTrend() },
                             onSensorClick = { hubViewModel.openSensor(it) }
                         )
 
@@ -459,7 +468,11 @@ fun SensorPulseHud() {
                             onFilterCategoryChange = { vaultViewModel.setLogFilterCategory(it) },
                             onDeleteSession = { sid -> vaultViewModel.deleteSession(sid) },
                             onUpdateNote = { id, notes -> vaultViewModel.updateReadingNotes(id, notes) },
-                            onDeleteReading = { id -> vaultViewModel.deleteSensorReading(id) }
+                            onDeleteReading = { id -> vaultViewModel.deleteSensorReading(id) },
+                            isExporting = isExportingCsv,
+                            onExportCsv = { uri, sid ->
+                                vaultViewModel.exportSessionsCsv(appContext, uri, sid)
+                            }
                         )
 
                         HudTab.VAULT -> CameraVaultScreen(

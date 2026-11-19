@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
@@ -56,9 +57,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.model.LiveTelemetrySample
 import com.example.data.model.SensorCategory
 import com.example.data.model.SensorDescriptor
 import com.example.data.model.SensorKind
+import com.example.ui.components.LiveTelemetryTrendCard
 import com.example.ui.components.sensorCategoryColor
 import com.example.ui.components.sensorCategoryIcon
 import com.example.ui.theme.AlertCrimson
@@ -81,12 +84,16 @@ fun SensorDashboardScreen(
     sessionPhotoCount: Int,
     motionStepCount: Int,
     isUserInMotion: Boolean,
+    dashboardTrendSensor: SensorDescriptor? = null,
+    dashboardTrendSamples: List<LiveTelemetrySample> = emptyList(),
     hasPermissionsCheck: (SensorDescriptor) -> Boolean,
     onCategorySelected: (SensorCategory?) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onStartSession: () -> Unit,
     onStopSession: () -> Unit,
     onStopSensor: (String) -> Unit,
+    onSelectDashboardTrendSensor: (SensorDescriptor) -> Unit = {},
+    onStopDashboardTrend: () -> Unit = {},
     onSensorClick: (SensorDescriptor) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -236,34 +243,55 @@ fun SensorDashboardScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        if (filteredSensors.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 166.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item(
+                key = "live_telemetry_trends_header",
+                span = { GridItemSpan(maxLineSpan) }
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Filled.Sensors,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "No matching sensors found",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+                LiveTelemetryTrendCard(
+                    allSensors = sensors,
+                    activeTrendSensor = dashboardTrendSensor,
+                    samples = dashboardTrendSamples,
+                    hasPermissionsCheck = hasPermissionsCheck,
+                    onSelectSensor = onSelectDashboardTrendSensor,
+                    onStopTrend = onStopDashboardTrend
+                )
             }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 166.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+
+            if (filteredSensors.isEmpty()) {
+                item(
+                    key = "empty_sensors_state",
+                    span = { GridItemSpan(maxLineSpan) }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 36.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Filled.Sensors,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "No matching sensors found",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            } else {
                 items(filteredSensors, key = { it.id }) { sensor ->
                     SensorTileCard(
                         sensor = sensor,

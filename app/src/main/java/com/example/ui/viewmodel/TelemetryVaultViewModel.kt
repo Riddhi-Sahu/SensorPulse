@@ -1,5 +1,7 @@
 package com.example.ui.viewmodel
 
+import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -47,6 +49,9 @@ class TelemetryVaultViewModel(
 
     private val _vaultFeedback = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val vaultFeedback: SharedFlow<String> = _vaultFeedback.asSharedFlow()
+
+    private val _isExporting = MutableStateFlow(false)
+    val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
 
     val logBundle: StateFlow<UiState<TelemetryLogBundle>> =
         combine(
@@ -145,6 +150,27 @@ class TelemetryVaultViewModel(
                 onSuccess = { _vaultFeedback.tryEmit("Camera capture removed") },
                 onFailure = { _vaultFeedback.tryEmit(it.localizedMessage ?: "Failed to remove capture") }
             )
+        }
+    }
+
+    fun exportSessionsCsv(context: Context, targetUri: Uri, sessionId: Long? = null) {
+        if (_isExporting.value) return
+        viewModelScope.launch {
+            _isExporting.value = true
+            try {
+                repository.exportSessionsCsvToUri(context.applicationContext, targetUri, sessionId).fold(
+                    onSuccess = { summary ->
+                        _vaultFeedback.tryEmit(
+                            "Exported ${summary.sessionCount} session(s) (${summary.rowCount} rows) to CSV"
+                        )
+                    },
+                    onFailure = { err ->
+                        _vaultFeedback.tryEmit(err.localizedMessage ?: "Failed to export CSV")
+                    }
+                )
+            } finally {
+                _isExporting.value = false
+            }
         }
     }
 

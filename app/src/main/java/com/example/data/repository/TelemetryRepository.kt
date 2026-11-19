@@ -1,6 +1,9 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.net.Uri
+import com.example.data.export.CsvExportSummary
+import com.example.data.export.SessionCsvExporter
 import com.example.data.local.CameraCaptureEntity
 import com.example.data.local.RecordingSessionEntity
 import com.example.data.local.SensorPulseDatabase
@@ -10,6 +13,7 @@ import com.example.data.model.CameraCaptureRecord
 import com.example.data.model.RecordingSession
 import com.example.data.model.SensorReading
 import java.io.File
+import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -221,6 +225,50 @@ class TelemetryRepository(
                 }
             }
             Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun exportSessionsCsv(
+        outputStream: OutputStream,
+        sessionId: Long? = null
+    ): Result<CsvExportSummary> {
+        return try {
+            val summary = withContext(Dispatchers.IO) {
+                val bundles = if (sessionId != null) {
+                    listOfNotNull(dao.getSessionWithTelemetryById(sessionId))
+                } else {
+                    dao.getAllSessionsWithTelemetry()
+                }
+                check(bundles.isNotEmpty()) {
+                    "No recorded session data available to export."
+                }
+                SessionCsvExporter.writeToStream(outputStream, bundles)
+            }
+            Result.success(summary)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun exportSessionsCsvToUri(
+        context: Context,
+        targetUri: Uri,
+        sessionId: Long? = null
+    ): Result<CsvExportSummary> {
+        return try {
+            withContext(Dispatchers.IO) {
+                val stream = context.contentResolver.openOutputStream(targetUri)
+                    ?: error("Unable to open destination file for writing.")
+                stream.use { outputStream ->
+                    exportSessionsCsv(outputStream, sessionId).getOrThrow()
+                }
+            }.let { Result.success(it) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

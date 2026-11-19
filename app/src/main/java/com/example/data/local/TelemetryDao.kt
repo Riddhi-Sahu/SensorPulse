@@ -17,6 +17,14 @@ interface TelemetryDao {
     @Query("SELECT * FROM recording_sessions ORDER BY startedAtMs DESC")
     fun observeSessionsWithTelemetry(): Flow<List<SessionWithTelemetry>>
 
+    @Transaction
+    @Query("SELECT * FROM recording_sessions ORDER BY startedAtMs DESC")
+    suspend fun getAllSessionsWithTelemetry(): List<SessionWithTelemetry>
+
+    @Transaction
+    @Query("SELECT * FROM recording_sessions WHERE id = :sessionId LIMIT 1")
+    suspend fun getSessionWithTelemetryById(sessionId: Long): SessionWithTelemetry?
+
     @Query("SELECT * FROM recording_sessions WHERE userId = :userId ORDER BY startedAtMs DESC")
     fun observeSessionsForUser(userId: Long): Flow<List<RecordingSessionEntity>>
 

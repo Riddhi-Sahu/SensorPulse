@@ -169,5 +169,36 @@ class SessionAndAuthTest {
         assertTrue(vm.consentedSensorIds.value.isEmpty())
         assertFalse(vm.isSensorStreaming.value)
         assertTrue(vm.sessionRecordingSensors.value.isEmpty())
+        assertNull(vm.dashboardTrendSensor.value)
+        assertTrue(vm.dashboardTrendSamples.value.isEmpty())
+    }
+
+    @Test
+    fun `dashboard trend stream starts and stops cleanly`() = runBlocking {
+        val vm = SensorHubViewModel(
+            repository = repository,
+            sensorManager = DeviceSensorManager(context),
+            cameraFileStore = CameraLocalFileStore(context)
+        )
+        val accelSensor = SensorDescriptor(
+            id = "hw_1_0",
+            name = "Accelerometer",
+            category = SensorCategory.MOTION,
+            kind = SensorKind.HARDWARE_SENSOR,
+            androidSensorType = android.hardware.Sensor.TYPE_ACCELEROMETER,
+            requiredPermissions = emptyList(),
+            permissionRationale = "Test rationale",
+            unit = "m/s²",
+            axisLabels = listOf("X", "Y", "Z"),
+            vendor = "Test"
+        )
+
+        vm.selectDashboardTrendSensor(accelSensor)
+        assertEquals("hw_1_0", vm.dashboardTrendSensor.value?.id)
+        assertTrue("hw_1_0" in vm.consentedSensorIds.value)
+
+        vm.stopDashboardTrend()
+        assertNull(vm.dashboardTrendSensor.value)
+        assertTrue(vm.dashboardTrendSamples.value.isEmpty())
     }
 }

@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +40,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,11 +86,24 @@ fun TelemetryLogScreen(
     onDeleteSession: (sessionId: Long) -> Unit,
     onUpdateNote: (readingId: Long, notes: String) -> Unit,
     onDeleteReading: (readingId: Long) -> Unit,
+    isExporting: Boolean = false,
+    onExportCsv: (targetUri: Uri, sessionId: Long?) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var editingReading by remember { mutableStateOf<SensorReading?>(null) }
     var editingNoteText by remember { mutableStateOf("") }
     val expandedSessions = remember { mutableStateMapOf<Long, Boolean>() }
+    var pendingExportSessionId by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    val csvExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        val targetSessionId = pendingExportSessionId
+        pendingExportSessionId = null
+        if (uri != null) {
+            onExportCsv(uri, targetSessionId)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -118,6 +137,72 @@ fun TelemetryLogScreen(
 
             is UiState.Success -> {
                 val bundle = logState.data
+                if (bundle.sessions.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.35f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "ROOM TELEMETRY EXPORT",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = ElectricCyan
+                                )
+                                Text(
+                                    text = "${bundle.sessions.size} session(s) ready for analysis",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    pendingExportSessionId = null
+                                    val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                                    csvExportLauncher.launch("sensorpulse_sessions_$stamp.csv")
+                                },
+                                enabled = !isExporting,
+                                modifier = Modifier
+                                    .height(48.dp)
+                                    .testTag("export_all_sessions_csv_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.7f)),
+                                contentPadding = PaddingValues(horizontal = 14.dp)
+                            ) {
+                                if (isExporting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = ElectricCyan
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Filled.FileDownload,
+                                        contentDescription = null,
+                                        tint = ElectricCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isExporting) "Exporting..." else "Export CSV",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = ElectricCyan
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
                 val allReadings = remember(bundle) {
                     bundle.sessions.flatMap { it.readings } + bundle.standaloneReadings
                 }
@@ -232,8 +317,16 @@ fun TelemetryLogScreen(
                             SessionGroupCard(
                                 item = bundleItem,
                                 expanded = isExpanded,
+                                isExporting = isExporting,
                                 onToggleExpand = {
                                     expandedSessions[bundleItem.session.id] = !isExpanded
+                                },
+                                onExportSession = {
+                                    pendingExportSessionId = bundleItem.session.id
+                                    val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                                    csvExportLauncher.launch(
+                                        "sensorpulse_session_${bundleItem.session.id}_$stamp.csv"
+                                    )
                                 },
                                 onDeleteSession = { onDeleteSession(bundleItem.session.id) },
                                 onEditNote = { reading ->
@@ -305,7 +398,9 @@ fun TelemetryLogScreen(
 private fun SessionGroupCard(
     item: SessionWithReadings,
     expanded: Boolean,
+    isExporting: Boolean,
     onToggleExpand: () -> Unit,
+    onExportSession: () -> Unit,
     onDeleteSession: () -> Unit,
     onEditNote: (SensorReading) -> Unit,
     onDeleteReading: (Long) -> Unit
@@ -381,8 +476,24 @@ private fun SessionGroupCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onExportSession,
+                        enabled = !isExporting,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("export_session_csv_${session.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.FileDownload,
+                            contentDescription = "Export session as CSV",
+                            tint = ElectricCyan
+                        )
+                    }
                     if (!session.isActive) {
-                        IconButton(onClick = onDeleteSession) {
+                        IconButton(
+                            onClick = onDeleteSession,
+                            modifier = Modifier.size(48.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Filled.Delete,
                                 contentDescription = "Delete session",

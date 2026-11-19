@@ -90,9 +90,17 @@ class SensorHubViewModel(
     private val _isUserInMotion = MutableStateFlow(false)
     val isUserInMotion: StateFlow<Boolean> = _isUserInMotion.asStateFlow()
 
+    // Live Dashboard Trend Stream
+    private val _dashboardTrendSensor = MutableStateFlow<SensorDescriptor?>(null)
+    val dashboardTrendSensor: StateFlow<SensorDescriptor?> = _dashboardTrendSensor.asStateFlow()
+
+    private val _dashboardTrendSamples = MutableStateFlow<List<LiveTelemetrySample>>(emptyList())
+    val dashboardTrendSamples: StateFlow<List<LiveTelemetrySample>> = _dashboardTrendSamples.asStateFlow()
+
     private var streamJob: Job? = null
     private var detailStepJob: Job? = null
     private var sessionStepJob: Job? = null
+    private var dashboardTrendJob: Job? = null
     private val sessionStreamJobs = mutableMapOf<String, Job>()
     private var stepBaselineOffset = 0
     private var lastRawSteps = 0
@@ -176,6 +184,7 @@ class SensorHubViewModel(
 
         // Stop all currently streaming/granted sensors immediately when the session ends
         stopDetailStreamOnly()
+        stopDashboardTrend()
         _liveSample.value = null
         _waveformHistory.value = emptyList()
         _streamError.value = null
@@ -212,11 +221,37 @@ class SensorHubViewModel(
         _streamError.value = null
         if (descriptor.kind != SensorKind.CAMERA_OPTICAL) {
             startStreamFor(descriptor)
+            startDashboardTrendStream(descriptor)
             val sid = _activeSessionId.value
             if (sid != null) {
                 enrollSensorInSession(descriptor, sid)
             }
         }
+    }
+
+    fun selectDashboardTrendSensor(descriptor: SensorDescriptor) {
+        if (descriptor.kind == SensorKind.CAMERA_OPTICAL) return
+        if (!hasRequiredPermissions(descriptor)) {
+            if (descriptor.requiredPermissions.isEmpty()) {
+                _consentedSensorIds.value = _consentedSensorIds.value + descriptor.id
+                val sid = _activeSessionId.value
+                if (sid != null) {
+                    enrollSensorInSession(descriptor, sid)
+                }
+            } else {
+                _feedback.tryEmit("Grant ${descriptor.name} permission to stream live trends")
+                openSensor(descriptor)
+                return
+            }
+        }
+        startDashboardTrendStream(descriptor)
+    }
+
+    fun stopDashboardTrend() {
+        dashboardTrendJob?.cancel()
+        dashboardTrendJob = null
+        _dashboardTrendSensor.value = null
+        _dashboardTrendSamples.value = emptyList()
     }
 
     fun stopSensor(sensorId: String) {
@@ -229,6 +264,9 @@ class SensorHubViewModel(
 
         if (_activeSensor.value?.id == sensorId) {
             stopDetailStreamOnly()
+        }
+        if (_dashboardTrendSensor.value?.id == sensorId) {
+            stopDashboardTrend()
         }
 
         val name = _allSensors.value.firstOrNull { it.id == sensorId }?.name ?: "Sensor"
@@ -380,6 +418,30 @@ class SensorHubViewModel(
         SensorKind.CAMERA_OPTICAL -> null
     }
 
+    private fun startDashboardTrendStream(descriptor: SensorDescriptor) {
+        if (descriptor.kind == SensorKind.CAMERA_OPTICAL) return
+        val flow = createSensorFlow(descriptor) ?: return
+        val switchingSensor = _dashboardTrendSensor.value?.id != descriptor.id
+        dashboardTrendJob?.cancel()
+        _dashboardTrendSensor.value = descriptor
+        if (switchingSensor) {
+            _dashboardTrendSamples.value = emptyList()
+        }
+        dashboardTrendJob = viewModelScope.launch {
+            var lastUiEmitMs = 0L
+            flow.catch { err ->
+                _feedback.tryEmit("${descriptor.name} trend stopped: ${err.localizedMessage ?: "stream error"}")
+            }.collect { sample ->
+                val now = sample.timestampMs
+                if (lastUiEmitMs == 0L || (now - lastUiEmitMs) >= DASHBOARD_TREND_INTERVAL_MS) {
+                    lastUiEmitMs = now
+                    _dashboardTrendSamples.value =
+                        (_dashboardTrendSamples.value + sample).takeLast(MAX_WAVEFORM_POINTS)
+                }
+            }
+        }
+    }
+
     private fun stopDetailStreamOnly() {
         streamJob?.cancel()
         streamJob = null
@@ -480,6 +542,7 @@ class SensorHubViewModel(
     override fun onCleared() {
         super.onCleared()
         stopDetailStreamOnly()
+        dashboardTrendJob?.cancel()
         sessionStreamJobs.values.forEach { it.cancel() }
         sessionStreamJobs.clear()
         sessionStepJob?.cancel()
@@ -488,5 +551,6 @@ class SensorHubViewModel(
     private companion object {
         const val MAX_WAVEFORM_POINTS = 60
         const val SESSION_SAMPLE_INTERVAL_MS = 1500L
+        const val DASHBOARD_TREND_INTERVAL_MS = 80L
     }
 }
