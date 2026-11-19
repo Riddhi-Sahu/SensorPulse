@@ -53,8 +53,8 @@ import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.HudBorder
 import com.example.ui.theme.SignalEmerald
 import com.example.ui.viewmodel.UiState
-import com.google.firebase.Timestamp
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -62,8 +62,8 @@ fun TelemetryLogScreen(
     readingsState: UiState<List<SensorReading>>,
     filterCategory: String?,
     onFilterCategoryChange: (String?) -> Unit,
-    onUpdateNote: (readingId: String, notes: String) -> Unit,
-    onDeleteReading: (readingId: String) -> Unit,
+    onUpdateNote: (readingId: Long, notes: String) -> Unit,
+    onDeleteReading: (readingId: Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var editingReading by remember { mutableStateOf<SensorReading?>(null) }
@@ -105,7 +105,7 @@ fun TelemetryLogScreen(
                     allReadings.map { it.sensorCategory }.distinct()
                 }
                 val visibleReadings = remember(allReadings, filterCategory) {
-                    val sorted = allReadings.sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                    val sorted = allReadings.sortedByDescending { it.createdAtMs }
                     if (filterCategory == null) sorted else sorted.filter { it.sensorCategory == filterCategory }
                 }
 
@@ -126,7 +126,7 @@ fun TelemetryLogScreen(
                             )
                         )
                         distinctCats.forEach { catCode ->
-                            val cat = SensorCategory.fromFirestore(catCode)
+                            val cat = SensorCategory.fromCode(catCode)
                             val accent = sensorCategoryColor(cat)
                             FilterChip(
                                 selected = filterCategory == catCode,
@@ -228,11 +228,11 @@ private fun SensorReadingCard(
     onEditNote: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val category = SensorCategory.fromFirestore(item.sensorCategory)
+    val category = SensorCategory.fromCode(item.sensorCategory)
     val accent = sensorCategoryColor(category)
-    val formattedDate = remember(item.createdAt, item.updatedAt) {
-        val ts = item.updatedAt ?: item.createdAt ?: Timestamp.now()
-        SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()).format(ts.toDate())
+    val formattedDate = remember(item.createdAtMs, item.updatedAtMs) {
+        val ts = if (item.updatedAtMs > 0L) item.updatedAtMs else item.createdAtMs
+        SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()).format(Date(ts))
     }
 
     Surface(

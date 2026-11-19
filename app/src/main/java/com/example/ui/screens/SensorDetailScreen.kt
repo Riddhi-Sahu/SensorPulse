@@ -338,7 +338,7 @@ fun SensorDetailScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Text(
-                                    text = "SYNC TO REAL-TIME DATABASE",
+                                    text = "SAVE TO LOCAL TELEMETRY DATABASE",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = SignalEmerald
                                 )
@@ -376,7 +376,7 @@ fun SensorDetailScreen(
                                             strokeWidth = 2.dp
                                         )
                                         Spacer(modifier = Modifier.width(10.dp))
-                                        Text("Syncing…")
+                                        Text("Saving…")
                                     } else {
                                         Icon(
                                             imageVector = Icons.Filled.CloudUpload,

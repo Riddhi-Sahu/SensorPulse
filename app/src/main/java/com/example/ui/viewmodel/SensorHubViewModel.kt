@@ -25,8 +25,7 @@ import kotlinx.coroutines.withContext
 class SensorHubViewModel(
     private val repository: TelemetryRepository,
     private val sensorManager: DeviceSensorManager,
-    private val cameraFileStore: CameraLocalFileStore,
-    private val currentUserId: String
+    private val cameraFileStore: CameraLocalFileStore
 ) : ViewModel() {
 
     private val _allSensors = MutableStateFlow<List<SensorDescriptor>>(emptyList())
@@ -151,7 +150,6 @@ class SensorHubViewModel(
         viewModelScope.launch {
             _isSaving.value = true
             val result = repository.saveSensorReading(
-                userId = currentUserId,
                 sensorId = sensor.id,
                 sensorName = sensor.name,
                 sensorCategory = sensor.category.firestoreValue,
@@ -163,7 +161,7 @@ class SensorHubViewModel(
             _isSaving.value = false
             result.fold(
                 onSuccess = {
-                    _feedback.tryEmit("Snapshot synced to Cloud Firestore (${sensor.name})")
+                    _feedback.tryEmit("Snapshot saved locally (${sensor.name})")
                 },
                 onFailure = { err ->
                     _feedback.tryEmit(err.localizedMessage ?: "Failed to save snapshot")
@@ -188,7 +186,6 @@ class SensorHubViewModel(
                 cameraFileStore.inspectSavedFile(savedFile)
             }
             val result = repository.saveCameraCapture(
-                userId = currentUserId,
                 fileName = info.fileName,
                 localFilePath = info.absolutePath,
                 lensFacing = lensFacing,
@@ -202,7 +199,7 @@ class SensorHubViewModel(
             _isSaving.value = false
             result.fold(
                 onSuccess = {
-                    _feedback.tryEmit("Photo saved locally & optical metadata synced to Camera Vault")
+                    _feedback.tryEmit("Photo & optical metadata saved to local Camera Vault")
                 },
                 onFailure = { err ->
                     _feedback.tryEmit(err.localizedMessage ?: "Failed to store camera capture metadata")

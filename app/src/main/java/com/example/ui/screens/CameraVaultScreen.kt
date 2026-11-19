@@ -52,16 +52,16 @@ import com.example.ui.theme.HudBorder
 import com.example.ui.theme.SignalEmerald
 import com.example.ui.theme.TelemetryAmber
 import com.example.ui.viewmodel.UiState
-import com.google.firebase.Timestamp
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
 fun CameraVaultScreen(
     capturesState: UiState<List<CameraCaptureRecord>>,
-    onUpdateCaption: (captureId: String, caption: String) -> Unit,
-    onDeleteCapture: (captureId: String, localFilePath: String?) -> Unit,
+    onUpdateCaption: (captureId: Long, caption: String) -> Unit,
+    onDeleteCapture: (captureId: Long, localFilePath: String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var editingCapture by remember { mutableStateOf<CameraCaptureRecord?>(null) }
@@ -99,7 +99,7 @@ fun CameraVaultScreen(
 
             is UiState.Success -> {
                 val sorted = remember(capturesState.data) {
-                    capturesState.data.sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                    capturesState.data.sortedByDescending { it.createdAtMs }
                 }
                 if (sorted.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -187,9 +187,9 @@ private fun CameraVaultCard(
 ) {
     val localFile = remember(record.localFilePath) { File(record.localFilePath) }
     val fileExists = remember(record.localFilePath) { localFile.exists() }
-    val formattedDate = remember(record.createdAt, record.updatedAt) {
-        val ts = record.updatedAt ?: record.createdAt ?: Timestamp.now()
-        SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()).format(ts.toDate())
+    val formattedDate = remember(record.createdAtMs, record.updatedAtMs) {
+        val ts = if (record.updatedAtMs > 0L) record.updatedAtMs else record.createdAtMs
+        SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()).format(Date(ts))
     }
     val sizeKb = remember(record.fileSizeBytes) {
         String.format(Locale.US, "%.1f KB", record.fileSizeBytes / 1024.0)

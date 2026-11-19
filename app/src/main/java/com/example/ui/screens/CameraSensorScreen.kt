@@ -354,7 +354,7 @@ fun CameraSensorScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
-                                text = "LOCAL JPEG FILE + FIRESTORE CAMERA VAULT METADATA",
+                                text = "LOCAL JPEG FILE + LOCAL CAMERA VAULT DATABASE",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = TelemetryAmber
                             )

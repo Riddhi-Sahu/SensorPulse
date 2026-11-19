@@ -14,7 +14,7 @@
     <string name="capture_store_cta">Capture &amp; Store</string>
     <string name="sign_out">Sign Out</string>
     <string name="no_logs_title">No Telemetry Snapshots Yet</string>
-    <string name="no_logs_subtitle">Open any sensor, grant permission, and tap Save Snapshot to sync readings to Cloud Firestore in real time.</string>
+    <string name="no_logs_subtitle">Open any sensor, grant permission, and tap Save Snapshot to store readings locally on this device.</string>
     <string name="no_captures_title">Camera Vault Empty</string>
-    <string name="no_captures_subtitle">Open the Camera Sensor, capture a frame, and store the local JPEG paired with optical metadata in Firestore.</string>
+    <string name="no_captures_subtitle">Open the Camera Sensor, capture a frame, and store the local JPEG paired with optical metadata in the local vault.</string>
 </resources>

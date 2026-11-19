@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -15,19 +14,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -44,33 +37,23 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.credentials.CredentialManager
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import coil.compose.AsyncImage
-import com.example.auth.authStateFlow
-import com.example.auth.signOut
 import com.example.data.camera.CameraLocalFileStore
 import com.example.data.model.SensorKind
 import com.example.data.repository.TelemetryRepository
 import com.example.data.sensors.DeviceSensorManager
-import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.CameraSensorScreen
 import com.example.ui.screens.CameraVaultScreen
 import com.example.ui.screens.SensorDashboardScreen
@@ -83,12 +66,6 @@ import com.example.ui.theme.SlateSurface
 import com.example.ui.theme.TelemetryAmber
 import com.example.ui.viewmodel.SensorHubViewModel
 import com.example.ui.viewmodel.TelemetryVaultViewModel
-import com.google.firebase.Firebase
-import com.google.firebase.FirebaseApp
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.auth.auth
-import com.google.firebase.firestore.FirebaseFirestore
 
 private enum class HudTab(val labelRes: Int) {
     SENSORS(R.string.tab_sensors),
@@ -102,90 +79,36 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             SensorPulseTheme {
-                AppNavigation()
+                SensorPulseHud()
             }
-        }
-    }
-}
-
-@Composable
-fun AppNavigation() {
-    val context = LocalContext.current
-    val isFirebaseConfigured = remember(context) {
-        FirebaseApp.getApps(context).isNotEmpty()
-    }
-    if (!isFirebaseConfigured) {
-        AuthScreen(
-            isFirebaseConfigured = false,
-            onAuthSuccess = {}
-        )
-        return
-    }
-    val auth: FirebaseAuth = remember { Firebase.auth }
-    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
-    val user = currentUser
-
-    if (user == null) {
-        AuthScreen(onAuthSuccess = { /* AuthStateListener updates currentUser reactively */ })
-    } else {
-        key(user.uid) {
-            AuthenticatedTelemetryHost(currentUser = user)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AuthenticatedTelemetryHost(currentUser: FirebaseUser) {
-    val uid = currentUser.uid
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
+fun SensorPulseHud() {
     val snackbarHostState = remember { SnackbarHostState() }
 
     val hubViewModel: SensorHubViewModel = viewModel(
-        key = "hub_$uid",
         factory = viewModelFactory {
             initializer {
                 val app = checkNotNull(this[APPLICATION_KEY])
-                val dbResId = app.resources.getIdentifier(
-                    "firestore_database_id",
-                    "string",
-                    app.packageName
-                )
-                val db = if (dbResId != 0) {
-                    FirebaseFirestore.getInstance(app.getString(dbResId))
-                } else {
-                    FirebaseFirestore.getInstance()
-                }
                 SensorHubViewModel(
-                    repository = TelemetryRepository(db),
+                    repository = TelemetryRepository(app),
                     sensorManager = DeviceSensorManager(app),
-                    cameraFileStore = CameraLocalFileStore(app),
-                    currentUserId = uid
+                    cameraFileStore = CameraLocalFileStore(app)
                 )
             }
         }
     )
 
     val vaultViewModel: TelemetryVaultViewModel = viewModel(
-        key = "vault_$uid",
         factory = viewModelFactory {
             initializer {
                 val app = checkNotNull(this[APPLICATION_KEY])
-                val dbResId = app.resources.getIdentifier(
-                    "firestore_database_id",
-                    "string",
-                    app.packageName
-                )
-                val db = if (dbResId != 0) {
-                    FirebaseFirestore.getInstance(app.getString(dbResId))
-                } else {
-                    FirebaseFirestore.getInstance()
-                }
                 TelemetryVaultViewModel(
-                    repository = TelemetryRepository(db),
-                    currentUserId = uid
+                    repository = TelemetryRepository(app)
                 )
             }
         }
@@ -248,7 +171,6 @@ private fun AuthenticatedTelemetryHost(currentUser: FirebaseUser) {
     }
 
     var currentTab by rememberSaveable { mutableStateOf(HudTab.SENSORS) }
-    var showAccountMenu by remember { mutableStateOf(false) }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useRail = maxWidth >= 600.dp
@@ -267,63 +189,10 @@ private fun AuthenticatedTelemetryHost(currentUser: FirebaseUser) {
                                 color = ElectricCyan
                             )
                             Text(
-                                text = currentUser.email ?: currentUser.displayName ?: "Authenticated Operator",
+                                text = "LOCAL DEVICE TELEMETRY & CAMERA VAULT",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        }
-                    },
-                    actions = {
-                        Box {
-                            IconButton(
-                                onClick = { showAccountMenu = true },
-                                modifier = Modifier.testTag("account_menu_button")
-                            ) {
-                                val photoUrl = currentUser.photoUrl
-                                if (photoUrl != null) {
-                                    AsyncImage(
-                                        model = photoUrl,
-                                        contentDescription = "Account menu",
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .background(ElectricCyan.copy(alpha = 0.2f), CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = (currentUser.displayName ?: currentUser.email ?: "U")
-                                                .take(1)
-                                                .uppercase(),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = ElectricCyan
-                                        )
-                                    }
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = showAccountMenu,
-                                onDismissRequest = { showAccountMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.sign_out)) },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.Logout,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    onClick = {
-                                        showAccountMenu = false
-                                        signOut(credentialManager, scope)
-                                    },
-                                    modifier = Modifier.testTag("sign_out_menu_item")
-                                )
-                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
